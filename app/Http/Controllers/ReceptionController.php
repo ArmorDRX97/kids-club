@@ -1,7 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
-use App\Models\{Child, Enrollment, Section, Package, Attendance};
+use App\Models\{Child, Enrollment, Section, Attendance};
 
 
 class ReceptionController extends Controller
@@ -21,26 +21,71 @@ class ReceptionController extends Controller
             });
         })->with(['room','parent'])->orderBy('name')->get();
 
+        $perPage = 10;
+        $today = now()->toDateString();
 
-// Поиск детей (опциональный фильтр на панели сверху)
-        $children = collect();
-        if ($q !== '') {
-            $children = Child::active()->where(function($w) use ($q){
-                $w->where('first_name','like',"%$q%")
-                    ->orWhere('last_name','like',"%$q%")
-                    ->orWhere('patronymic','like',"%$q%")
-                    ->orWhere('parent_phone','like',"%$q%")
-                    ->orWhere('parent2_phone','like',"%$q%")
-                    ->orWhere('child_phone','like',"%$q%");
-            })->limit(20)->get();
-        }
+        $sectionCards = $sections->map(function(Section $section) use ($request, $q, $perPage, $today) {
+            $query = Enrollment::with(['child','package'])
+                ->where('section_id', $section->id)
+                ->whereHas('child', function($childQuery){
+                    $childQuery->where('is_active', true);
+                });
+
+            if ($q !== '') {
+                $query->whereHas('child', function($childQuery) use ($q) {
+                    $childQuery->where('first_name','like',"%$q%")
+                        ->orWhere('last_name','like',"%$q%")
+                        ->orWhere('patronymic','like',"%$q%")
+                        ->orWhere('parent_phone','like',"%$q%")
+                        ->orWhere('parent2_phone','like',"%$q%")
+                        ->orWhere('child_phone','like',"%$q%");
+                });
+            }
+
+            $pageParam = 'p_'.$section->id;
+            $page = max(1, $request->integer($pageParam, 1));
+
+            $total = (clone $query)->count();
+            $enrollments = (clone $query)
+                ->orderByDesc('started_at')
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage)
+                ->get();
+
+            $attendedToday = Attendance::where('section_id', $section->id)
+                ->where('attended_on', $today)
+                ->pluck('child_id')
+                ->all();
+
+            return [
+                'section' => $section,
+                'enrollments' => $enrollments,
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'attended_today' => $attendedToday,
+            ];
+        });
 
 
 // Открытая смена текущего пользователя (для таймера)
         $shift = \App\Models\Shift::where('user_id',$request->user()->id)->whereNull('ended_at')->latest('started_at')->first();
+        $shiftElapsed = null;
+        if ($shift) {
+            $seconds = now()->diffInSeconds($shift->started_at);
+            $hours = intdiv($seconds, 3600);
+            $minutes = intdiv($seconds % 3600, 60);
+            $sec = $seconds % 60;
+            $shiftElapsed = sprintf('%02d:%02d:%02d', $hours, $minutes, $sec);
+        }
 
-
-        return view('reception.index', compact('sections','q','children','shift'));
+        return view('reception.index', [
+            'sectionCards' => $sectionCards,
+            'q' => $q,
+            'shift' => $shift,
+            'today' => $today,
+            'shiftElapsed' => $shiftElapsed,
+        ]);
     }
 
 
