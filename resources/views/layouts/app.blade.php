@@ -30,17 +30,13 @@
                 <li class="nav-item"><a class="nav-link" href="/users">Пользователи</a></li>
                 @endrole
             </ul>
-            <form class="d-flex gap-2" method="POST" action="{{ route('shift.start') }}">@csrf
-                <button class="btn btn-success btn-sm">Начать смену</button>
-            </form>
-            <form class="ms-2" method="POST" action="{{ route('shift.stop') }}">@csrf
-                <button class="btn btn-secondary btn-sm">Завершить</button>
-            </form>
-            <div class="ms-3 small"><a class="nav-link" href="/account">Личный кабинет {{ auth()->user()->name ?? '' }}</a></div>
-            <form method="POST" action="{{ route('logout') }}" class="ms-2">
-                @csrf
-                <button type="submit" class="btn btn-link nav-link px-0">Выйти</button>
-            </form>
+            <div class="d-flex align-items-center gap-3 ms-lg-auto">
+                <a class="nav-link" href="/account">Личный кабинет {{ auth()->user()->name ?? '' }}</a>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button type="submit" class="btn btn-link nav-link px-0">Выйти</button>
+                </form>
+            </div>
         </div>
     </div>
 </nav>
@@ -49,5 +45,6 @@
     @yield('content')
 </main>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+@stack('scripts')
 </body>
 </html>
