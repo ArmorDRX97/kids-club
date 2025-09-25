@@ -39,7 +39,19 @@
                         @csrf
                         <div>
                             <div class="fw-semibold">{{ $child->full_name }}</div>
-                            <div class="small text-secondary">Пакет: {{ $e->package->type }} @if($e->visits_left!==null) — осталось {{ $e->visits_left }} @else — до {{ optional($e->expires_at)->format('d.m.Y') }} @endif</div>
+                            <div class="small text-secondary">
+                                Пакет: {{ $e->package->name }}
+                                @if($e->package->billing_type === 'visits' && $e->package->visits_count)
+                                    · {{ $e->package->visits_count }} занятий
+                                @elseif($e->package->billing_type === 'period' && $e->package->days)
+                                    · {{ $e->package->days }} дн.
+                                @endif
+                                @if($e->visits_left!==null)
+                                    — осталось {{ $e->visits_left }}
+                                @else
+                                    — до {{ optional($e->expires_at)->format('d.m.Y') }}
+                                @endif
+                            </div>
                         </div>
                         <input type="hidden" name="child_id" value="{{ $child->id }}">
                         <input type="hidden" name="section_id" value="{{ $s->id }}">

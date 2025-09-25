@@ -28,7 +28,8 @@ class SectionMembersController extends Controller
             });
         }
         $members = $enrs->paginate(15)->withQueryString();
-        return view('sections.members.index', compact('section','members','q'));
+        $packages = $section->packages()->orderBy('name')->get();
+        return view('sections.members.index', compact('section','members','q','packages'));
     }
 
     public function search(Request $request, Section $section)
@@ -54,28 +55,35 @@ class SectionMembersController extends Controller
     public function store(Request $request, Section $section)
     {
         // Получаем JSON-строки и преобразуем в массивы
-        $add = json_decode($request->input('add_ids', '[]'), true);
+        $addPayload = json_decode($request->input('add_payload', '[]'), true);
         $remove = json_decode($request->input('remove_ids', '[]'), true);
 
         // Страховка: если decode вернул null — подставляем пустой массив
-        $add = is_array($add) ? $add : [];
+        $addPayload = is_array($addPayload) ? $addPayload : [];
         $remove = is_array($remove) ? $remove : [];
 
         // Валидация ID
         $validated = \Validator::make([
-            'add_ids' => $add,
+            'add_payload' => $addPayload,
             'remove_ids' => $remove,
         ], [
-            'add_ids' => ['array'],
-            'add_ids.*' => ['integer', 'exists:children,id'],
+            'add_payload' => ['array'],
+            'add_payload.*.child_id' => ['required','integer','exists:children,id'],
+            'add_payload.*.package_id' => ['required','integer','exists:packages,id'],
             'remove_ids' => ['array'],
             'remove_ids.*' => ['integer', 'exists:children,id'],
         ])->validate();
 
-        // Проверка: для добавления нужен пакет по умолчанию у секции
-        $pkg = $section->defaultPackage;
-        if (!empty($validated['add_ids']) && !$pkg) {
-            return back()->with('error', 'Сначала выберите пакет по умолчанию для секции (в её настройках).');
+        $additions = $validated['add_payload'] ?? [];
+        $packageIds = collect($additions)->pluck('package_id')->unique()->all();
+
+        if (!empty($packageIds)) {
+            $packages = $section->packages()->whereIn('id', $packageIds)->get()->keyBy('id');
+            if ($packages->count() !== count($packageIds)) {
+                return back()->with('error', 'Выбран один или несколько пакетов, не принадлежащих секции.');
+            }
+        } else {
+            $packages = collect();
         }
 
         // Обработка откреплений
@@ -85,13 +93,16 @@ class SectionMembersController extends Controller
                 ->update([
                     'expires_at' => now()->subDay(),
                     'visits_left' => 0,
-                    'status' => 'closed',
+                    'status' => 'expired',
                 ]);
         }
 
         // Обработка прикреплений
-        if (!empty($validated['add_ids'])) {
-            foreach ($validated['add_ids'] as $childId) {
+        if (!empty($additions)) {
+            foreach ($additions as $item) {
+                $childId = (int) $item['child_id'];
+                $packageId = (int) $item['package_id'];
+
                 // Проверим, нет ли уже активного прикрепления
                 $exists = Enrollment::where('child_id', $childId)
                     ->where('section_id', $section->id)
@@ -103,18 +114,30 @@ class SectionMembersController extends Controller
 
                 if ($exists) continue;
 
+                /** @var \App\Models\Package|null $pkg */
+                $pkg = $packages[$packageId] ?? null;
+                if (!$pkg) {
+                    // На всякий случай пропускаем, если пакет не найден в списке секции
+                    continue;
+                }
+
                 $enr = new Enrollment();
                 $enr->child_id = $childId;
                 $enr->section_id = $section->id;
                 $enr->package_id = $pkg->id;
                 $enr->started_at = now()->toDateString();
                 $enr->price = $pkg->price;
+                $enr->total_paid = 0;
                 $enr->status = 'pending';
 
-                if ($pkg->type === 'visits') {
+                if ($pkg->billing_type === 'visits') {
                     $enr->visits_left = $pkg->visits_count;
-                } elseif ($pkg->type === 'period' && $pkg->days) {
+                    $enr->expires_at = null;
+                } elseif ($pkg->billing_type === 'period' && $pkg->days) {
                     $enr->expires_at = now()->addDays($pkg->days);
+                    $enr->visits_left = null;
+                } else {
+                    $enr->visits_left = null;
                 }
 
                 $enr->save();
