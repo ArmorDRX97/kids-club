@@ -1,6 +1,6 @@
 <?php
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, PackageController, ChildController, ReceptionController, RoomController};
+use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController};
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AccountController;
 
@@ -47,7 +47,14 @@ Route::middleware(['auth'])->group(function(){
 
     Route::middleware(['role:Admin'])->group(function(){
         Route::resource('sections', SectionController::class)->except(['show']);
-        Route::resource('packages', PackageController::class)->except(['show']);
+        Route::prefix('sections/{section}')->name('sections.')->group(function(){
+            Route::get('packages', [SectionPackageController::class,'index'])->name('packages.index');
+            Route::get('packages/create', [SectionPackageController::class,'create'])->name('packages.create');
+            Route::post('packages', [SectionPackageController::class,'store'])->name('packages.store');
+            Route::get('packages/{package}/edit', [SectionPackageController::class,'edit'])->name('packages.edit');
+            Route::put('packages/{package}', [SectionPackageController::class,'update'])->name('packages.update');
+            Route::delete('packages/{package}', [SectionPackageController::class,'destroy'])->name('packages.destroy');
+        });
         Route::resource('rooms', RoomController::class);
     });
 

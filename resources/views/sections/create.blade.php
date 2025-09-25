@@ -53,23 +53,22 @@
 
             <div class="col-md-9 d-none" id="wrapMonthly">
                 <label class="form-label">Дни месяца</label>
-                <input class="form-control" name="month_days" placeholder="Например: 1, 10, 20" value="{{ old('month_days') }}">
-                <small class="text-secondary">Укажите через запятую (например: 1,10,20)</small>
+                @php(
+                    $createMonthDaysOld = old('month_days');
+                    $createMonthDaysValue = is_array($createMonthDaysOld)
+                        ? implode(', ', $createMonthDaysOld)
+                        : ($createMonthDaysOld ?? '');
+                )
+                <input class="form-control" name="month_days" placeholder="Например: 1, 10, 20" value="{{ $createMonthDaysValue }}">
+                <small class="text-secondary">Укажите через запятую (например: 1, 10, 20)</small>
             </div>
 
             <div class="col-12 form-check form-switch">
                 <input type="hidden" name="is_active" value="0">
                 <input class="form-check-input" type="checkbox" role="switch" id="is_active" name="is_active"
-                       value="1" {{ old('is_active',$section->is_active ?? true)?'checked':'' }}>
+                       value="1" {{ old('is_active', true)?'checked':'' }}>
                 <label class="form-check-label" for="is_active">Активна</label>
             </div>
-        </div>
-
-        <div class="col-md-6">
-            <label class="form-label">Пакет по умолчанию (после сохранения секции можно выбрать один из её пакетов)</label>
-            <select class="form-select" name="default_package_id" disabled>
-                <option value="">— доступно после создания секции —</option>
-            </select>
         </div>
 
         <div class="mt-3 d-flex gap-2">
