@@ -53,12 +53,12 @@
 
             <div class="col-md-9 d-none" id="wrapMonthly">
                 <label class="form-label">Дни месяца</label>
-                @php(
+                @php
                     $createMonthDaysOld = old('month_days');
                     $createMonthDaysValue = is_array($createMonthDaysOld)
                         ? implode(', ', $createMonthDaysOld)
                         : ($createMonthDaysOld ?? '');
-                )
+                @endphp
                 <input class="form-control" name="month_days" placeholder="Например: 1, 10, 20" value="{{ $createMonthDaysValue }}">
                 <small class="text-secondary">Укажите через запятую (например: 1, 10, 20)</small>
             </div>
