@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Child, Enrollment, Section, Package};
+use App\Models\{Child, Enrollment};
 use Illuminate\Http\Request;
 
 
@@ -23,7 +23,10 @@ class ChildController extends Controller
                         ->orWhere('parent2_phone', 'like', "%$q%");
                 });
             })
-            ->orderBy('last_name')->paginate(20)->withQueryString();
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate(20)
+            ->withQueryString();
         return view('children.index', compact('children', 'q', 'showDeleted'));
     }
 
@@ -38,10 +41,17 @@ class ChildController extends Controller
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:120'],
             'last_name' => ['required', 'string', 'max:120'],
+            'patronymic' => ['nullable', 'string', 'max:120'],
             'dob' => ['nullable', 'date'],
-            'parent_phone' => ['nullable', 'string', 'max:50'],
-            'notes' => ['nullable', 'string']
+            'child_phone' => ['nullable', 'string', 'max:40'],
+            'parent_phone' => ['nullable', 'string', 'max:40'],
+            'parent2_phone' => ['nullable', 'string', 'max:40'],
+            'notes' => ['nullable', 'string'],
+            'is_active' => ['required', 'boolean'],
         ]);
+
+        $data['is_active'] = $request->boolean('is_active', true);
+
         $child = Child::create($data);
         return redirect()->route('children.show', $child)->with('success', 'Ребёнок добавлен');
     }
@@ -49,10 +59,12 @@ class ChildController extends Controller
 
     public function show(Child $child)
     {
-        $child->load(['enrollments.section', 'enrollments.package', 'payments']);
-        $sections = Section::orderBy('name')->get();
-        $packages = Package::orderBy('section_id')->orderBy('type')->get();
-        return view('children.show', compact('child', 'sections', 'packages'));
+        $child->load([
+            'enrollments' => fn($q) => $q->with(['section', 'package'])->latest('started_at'),
+            'payments' => fn($q) => $q->with(['enrollment.section', 'enrollment.package'])->latest('paid_at'),
+        ]);
+
+        return view('children.show', compact('child'));
     }
 
 
@@ -74,6 +86,7 @@ class ChildController extends Controller
             'parent2_phone' => ['nullable', 'string', 'max:40'],
             'notes' => ['nullable', 'string'],
         ]);
+
         $child->update($data);
         return redirect()->route('children.show', $child)->with('success', 'Данные обновлены');
     }

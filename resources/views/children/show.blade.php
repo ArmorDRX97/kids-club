@@ -42,12 +42,96 @@
         <a href="{{ route('children.index') }}" class="btn btn-link">Назад к списку</a>
     </div>
 
-    {{-- Блоки для расширения в будущем --}}
     <div class="mt-4">
-        <h2 class="h5 mb-3">Прикрепления и посещения</h2>
+        <h2 class="h5 mb-3">Прикрепления</h2>
         <div class="card">
-            <div class="card-body">
-                <p class="text-secondary mb-0">Здесь позже можно вывести список секций, пакетов и историю посещений ребёнка.</p>
+            <div class="table-responsive">
+                <table class="table table-striped align-middle mb-0">
+                    <thead class="table-light">
+                    <tr>
+                        <th>Секция</th>
+                        <th>Пакет</th>
+                        <th>Период</th>
+                        <th>Остаток</th>
+                        <th>Статус</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @forelse($child->enrollments as $enrollment)
+                        @php
+                            $periodStart = $enrollment->started_at?->format('d.m.Y');
+                            $periodEnd = $enrollment->expires_at?->format('d.m.Y');
+                            $period = $periodStart ?? '—';
+                            if ($periodEnd) {
+                                $period .= ' — ' . $periodEnd;
+                            }
+                            $visitsLeft = $enrollment->visits_left !== null ? $enrollment->visits_left : '—';
+                            $statusMap = [
+                                'pending' => 'Ожидает оплаты',
+                                'partial' => 'Частично оплачен',
+                                'paid' => 'Оплачен',
+                                'expired' => 'Истёк',
+                            ];
+                        @endphp
+                        <tr>
+                            <td>{{ $enrollment->section?->name ?? '—' }}</td>
+                            <td>
+                                {{ $enrollment->package?->name ?? '—' }}
+                                @if($enrollment->package?->section && $enrollment->package->section_id !== $enrollment->section_id)
+                                    <span class="badge text-bg-warning ms-1">другая секция</span>
+                                @endif
+                            </td>
+                            <td>{{ $period }}</td>
+                            <td>{{ $visitsLeft }}</td>
+                            <td>{{ $statusMap[$enrollment->status] ?? $enrollment->status }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary py-4">Прикреплений пока нет</td>
+                        </tr>
+                    @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <h2 class="h5 mb-3">Платежи</h2>
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-striped align-middle mb-0">
+                    <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Секция</th>
+                        <th>Пакет</th>
+                        <th>Сумма</th>
+                        <th>Комментарий</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @forelse($child->payments as $payment)
+                        <tr>
+                            <td>{{ $payment->paid_at?->format('d.m.Y H:i') ?? '—' }}</td>
+                            <td>{{ $payment->enrollment?->section?->name ?? '—' }}</td>
+                            <td>{{ $payment->enrollment?->package?->name ?? '—' }}</td>
+                            <td>
+                                @if($payment->amount !== null)
+                                    {{ number_format((float) $payment->amount, 2, ',', ' ') }} ₽
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td>{{ $payment->comment ?? '—' }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary py-4">Платежей ещё не было</td>
+                        </tr>
+                    @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
