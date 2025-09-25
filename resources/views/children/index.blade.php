@@ -20,15 +20,25 @@
                 <thead class="table-light">
                 <tr>
                     <th>ФИО</th>
-                    <th>Телефон</th>
-                    <th></th>
+                    <th>Телефон(ы)</th>
+                    <th class="text-end">Действия</th>
                 </tr>
                 </thead>
                 <tbody>
                 @forelse($children as $c)
                     <tr>
-                        <td><a href="{{ route('children.show',$c) }}" class="link-body-emphasis">{{ $c->last_name }} {{ $c->first_name }}</a></td>
-                        <td>{{ $c->parent_phone }}</td>
+                        <td>
+                            <a href="{{ route('children.show',$c) }}" class="link-body-emphasis">{{ $c->full_name }}</a>
+                            @unless($c->is_active)
+                                <span class="badge text-bg-secondary ms-1">неактивен</span>
+                            @endunless
+                        </td>
+                        <td>
+                            <div>{{ $c->parent_phone ?? $c->child_phone ?? '—' }}</div>
+                            @if($c->parent2_phone)
+                                <div class="text-secondary small">{{ $c->parent2_phone }}</div>
+                            @endif
+                        </td>
                         <td class="text-end">
                             <a href="{{ route('children.edit',$c) }}" class="btn btn-sm btn-outline-secondary">Править</a>
                         </td>
