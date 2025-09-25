@@ -46,7 +46,11 @@
             <div class="col-md-9" id="wrapWeekly">
                 <label class="form-label">Дни недели</label>
                 <div class="d-flex flex-wrap gap-2">
-                    @php($selectedWeekdays = collect(old('weekdays', $section->weekdays ?? []))->map(fn($v)=>(int)$v)->all())
+                    @php
+                        $selectedWeekdays = collect(old('weekdays', $section->weekdays ?? []))
+                            ->map(fn ($v) => (int) $v)
+                            ->all();
+                    @endphp
                     @foreach([[1,'Пн'],[2,'Вт'],[3,'Ср'],[4,'Чт'],[5,'Пт'],[6,'Сб'],[7,'Вс']] as [$d,$t])
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="weekdays[]" value="{{ $d }}" id="wd{{ $d }}"
