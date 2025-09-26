@@ -34,7 +34,7 @@ class ComprehensiveDemoSeeder extends Seeder
             Enrollment::query()->delete();
             ActivityLog::query()->delete();
             Child::query()->delete();
-            DB::table('teacher_section')->delete();
+            DB::table('section_teacher')->delete();
             Teacher::query()->delete();
             Package::query()->delete();
             Section::query()->delete();
