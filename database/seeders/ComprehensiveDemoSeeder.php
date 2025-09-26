@@ -213,7 +213,7 @@ class ComprehensiveDemoSeeder extends Seeder
                 if ($endedAt->lessThan($startedAt)) {
                     $endedAt = (clone $scheduledEnd);
                 }
-                $duration = $endedAt->diffInMinutes($startedAt);
+                $duration = max($startedAt->diffInMinutes($endedAt, false), 0);
                 $closedAutomatically = rand(0, 4) === 0;
 
                 $shift = Shift::create([
