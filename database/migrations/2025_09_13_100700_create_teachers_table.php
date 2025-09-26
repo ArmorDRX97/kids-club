@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->text('notes')->nullable();
             $table->timestamps();
         });
-        Schema::create('teacher_section', function (Blueprint $table) {
+        Schema::create('section_teacher', function (Blueprint $table) {
             $table->id();
             $table->foreignId('teacher_id')->constrained('teachers')->cascadeOnDelete();
             $table->foreignId('section_id')->constrained('sections')->cascadeOnDelete();
@@ -23,7 +23,7 @@ return new class extends Migration {
         });
     }
     public function down(): void {
-        Schema::dropIfExists('teacher_section');
+        Schema::dropIfExists('section_teacher');
         Schema::dropIfExists('teachers');
     }
 };
