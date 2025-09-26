@@ -9,12 +9,17 @@
             <div class="col-md-4"><label class="form-label">Телефон</label><input name="phone" class="form-control" value="{{ old('phone',$user->phone) }}"></div>
             <div class="col-md-4"><label class="form-label">Новый пароль (если менять)</label><input type="password" name="password" class="form-control"></div>
             <div class="col-md-4"><label class="form-label">Повтор пароля</label><input type="password" name="password_confirmation" class="form-control"></div>
+            @php($role = $user->getRoleNames()->first())
             <div class="col-md-4"><label class="form-label">Роль</label>
-                <select name="role" class="form-select" required>
-                    @php($role = $user->getRoleNames()->first())
-                    <option value="Receptionist" @selected($role==='Receptionist')>Receptionist</option>
-                    <option value="Admin" @selected($role==='Admin')>Admin</option>
-                </select>
+                @if($role === \App\Models\User::ROLE_ADMIN)
+                    <input type="hidden" name="role" value="Admin">
+                    <div class="form-control-plaintext">Admin</div>
+                    <div class="form-text">Роль администратора нельзя изменить.</div>
+                @else
+                    <select name="role" class="form-select" required>
+                        <option value="Receptionist" @selected($role==='Receptionist')>Receptionist</option>
+                    </select>
+                @endif
             </div>
         </div>
         <div class="mt-3 d-flex gap-2">

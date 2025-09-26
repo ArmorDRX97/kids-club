@@ -12,8 +12,8 @@
             <div class="col-md-4"><label class="form-label">Роль</label>
                 <select name="role" class="form-select" required>
                     <option value="Receptionist">Receptionist</option>
-                    <option value="Admin">Admin</option>
                 </select>
+                <div class="form-text">Роль администратора назначена системно и недоступна для выбора.</div>
             </div>
         </div>
         <div class="mt-3 d-flex gap-2">

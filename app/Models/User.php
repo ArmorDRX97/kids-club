@@ -10,6 +10,9 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
+    public const ROLE_ADMIN = 'Admin';
+    public const ROLE_RECEPTIONIST = 'Receptionist';
+
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasRoles;
 
@@ -45,5 +48,10 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function receptionSetting()
+    {
+        return $this->hasOne(ReceptionSetting::class);
     }
 }

@@ -1,11 +1,16 @@
 <?php
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
-use App\Models\{Child, Enrollment, Section, Attendance};
+use App\Models\{Child, Enrollment, Section, Attendance, User};
+use App\Services\ShiftManager;
 
 
 class ReceptionController extends Controller
 {
+    public function __construct(private readonly ShiftManager $shiftManager)
+    {
+    }
+
     public function index(Request $request)
     {
         $q = trim($request->get('q',''));
@@ -23,6 +28,7 @@ class ReceptionController extends Controller
 
         $perPage = 10;
         $today = now()->toDateString();
+        $user = $request->user();
 
         $sectionCards = $sections->map(function(Section $section) use ($request, $q, $perPage, $today) {
             $query = Enrollment::with(['child','package'])
@@ -68,16 +74,33 @@ class ReceptionController extends Controller
         });
 
 
-// Открытая смена текущего пользователя (для таймера)
-        $shift = \App\Models\Shift::where('user_id',$request->user()->id)->whereNull('ended_at')->latest('started_at')->first();
+        $shift = $user ? $this->shiftManager->getActiveShift($user) : null;
         $shiftElapsed = null;
+        $shiftCanStop = false;
+        $shiftStopLockedUntil = null;
         if ($shift) {
             $seconds = now()->diffInSeconds($shift->started_at);
             $hours = intdiv($seconds, 3600);
             $minutes = intdiv($seconds % 3600, 60);
             $sec = $seconds % 60;
             $shiftElapsed = sprintf('%02d:%02d:%02d', $hours, $minutes, $sec);
+            if ($shift->auto_close_enabled) {
+                $shiftCanStop = true;
+            } else {
+                if ($shift->scheduled_end_at && now()->lt($shift->scheduled_end_at)) {
+                    $shiftStopLockedUntil = $shift->scheduled_end_at;
+                } else {
+                    $shiftCanStop = true;
+                }
+            }
         }
+
+        $shiftSetting = $user && $user->hasRole(User::ROLE_RECEPTIONIST)
+            ? $this->shiftManager->getSetting($user)
+            : null;
+
+        $shiftActive = (bool) $shift;
+        $shiftBlockReason = $shiftActive ? null : 'Начните смену, чтобы отмечать посещения и принимать оплату.';
 
         return view('reception.index', [
             'sectionCards' => $sectionCards,
@@ -85,6 +108,11 @@ class ReceptionController extends Controller
             'shift' => $shift,
             'today' => $today,
             'shiftElapsed' => $shiftElapsed,
+            'shiftActive' => $shiftActive,
+            'shiftBlockReason' => $shiftBlockReason,
+            'shiftSetting' => $shiftSetting,
+            'shiftCanStop' => $shiftCanStop,
+            'shiftStopLockedUntil' => $shiftStopLockedUntil,
         ]);
     }
 
@@ -100,6 +128,8 @@ class ReceptionController extends Controller
         if(!$enr) return back()->with('error','Нет активного пакета для этой секции');
         if($enr->expires_at && now()->gt($enr->expires_at)) return back()->with('error','Срок пакета истёк');
         if(!is_null($enr->visits_left) && $enr->visits_left < 1) return back()->with('error','Посещения закончились');
+        $requiredAmount = $enr->price ?? ($enr->package?->price ?? 0);
+        if($requiredAmount > 0 && $enr->total_paid < $requiredAmount) return back()->with('error','Отметка невозможна — оплата ещё не поступила.');
 
 
         $today = now()->toDateString();

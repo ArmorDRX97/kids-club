@@ -1,6 +1,6 @@
 <?php
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController};
+use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController, ReceptionSettingController, ReportController};
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AccountController;
 
@@ -17,6 +17,9 @@ Route::get('/', function(){ return view('welcome'); });
 
 Route::middleware(['auth','role:Admin'])->group(function(){
     Route::resource('users', UserController::class)->except(['show']);
+    Route::get('/reception/settings', [ReceptionSettingController::class,'index'])->name('reception.settings');
+    Route::put('/reception/settings/{user}', [ReceptionSettingController::class,'update'])->name('reception.settings.update');
+    Route::get('/reports', [ReportController::class,'index'])->name('reports.index');
 });
 
 Route::middleware(['auth'])->group(function(){
@@ -34,11 +37,11 @@ Route::middleware(['auth'])->group(function(){
 
 
 // Посещения
-    Route::post('/attendances',[AttendanceController::class,'store'])->name('attendances.store');
+    Route::post('/attendances',[AttendanceController::class,'store'])->name('attendances.store')->middleware('shift.active');
 
 
 // Платежи
-    Route::post('/payments',[PaymentController::class,'store'])->name('payments.store');
+    Route::post('/payments',[PaymentController::class,'store'])->name('payments.store')->middleware('shift.active');
 
 
 // Enrollment: прикрепление ребёнка к секции/пакету
@@ -64,7 +67,7 @@ Route::middleware(['auth'])->group(function(){
         Route::post('children/{child}/deactivate',[ChildController::class,'deactivate'])->name('children.deactivate');
         Route::post('children/{child}/activate',[ChildController::class,'activate'])->name('children.activate');
         Route::get('/reception',[ReceptionController::class,'index'])->name('reception.index');
-        Route::post('/reception/mark',[ReceptionController::class,'mark'])->name('reception.mark');
+        Route::post('/reception/mark',[ReceptionController::class,'mark'])->name('reception.mark')->middleware('shift.active');
         Route::post('/reception/renew',[ReceptionController::class,'renew'])->name('reception.renew');
     });
 });
