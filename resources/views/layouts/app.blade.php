@@ -24,7 +24,6 @@
                 <li class="nav-item"><a class="nav-link" href="/reception">Ресепшен</a></li>
                 <li class="nav-item"><a class="nav-link" href="/children">Дети</a></li>
                 <li class="nav-item"><a class="nav-link" href="/sections">Секции</a></li>
-                <li class="nav-item"><a class="nav-link" href="/packages">Пакеты</a></li>
                 @role('Admin')
                 <li class="nav-item"><a class="nav-link" href="{{ route('reception.settings') }}">Настройки ресепшена</a></li>
                 <li class="nav-item"><a class="nav-link" href="{{ route('reports.index') }}">Отчёты</a></li>
