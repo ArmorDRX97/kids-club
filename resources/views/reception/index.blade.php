@@ -23,8 +23,10 @@
             <div class="row g-4 align-items-center">
                 <div class="col-lg-7">
                     <h2 class="h4 mb-3">Управление сменой</h2>
-                    @php($settingStart = $shiftSetting ? substr($shiftSetting->shift_starts_at,0,5) : null)
-                    @php($settingEnd = $shiftSetting ? substr($shiftSetting->shift_ends_at,0,5) : null)
+                    @php
+                        $settingStart = $shiftSetting ? substr($shiftSetting->shift_starts_at, 0, 5) : null;
+                        $settingEnd = $shiftSetting ? substr($shiftSetting->shift_ends_at, 0, 5) : null;
+                    @endphp
                     @if($shiftSetting)
                         <div class="text-secondary small mb-2">
                             График: {{ $settingStart }} — {{ $settingEnd }} ·

@@ -13,9 +13,11 @@
 @else
     <div class="d-flex flex-column gap-4">
         @foreach($receptionists as $receptionist)
-            @php($setting = $receptionist->receptionSetting)
-            @php($startValue = $setting?->shift_starts_at ? substr($setting->shift_starts_at,0,5) : '09:00')
-            @php($endValue = $setting?->shift_ends_at ? substr($setting->shift_ends_at,0,5) : '18:00')
+            @php
+                $setting = $receptionist->receptionSetting;
+                $startValue = $setting?->shift_starts_at ? substr($setting->shift_starts_at, 0, 5) : '09:00';
+                $endValue = $setting?->shift_ends_at ? substr($setting->shift_ends_at, 0, 5) : '18:00';
+            @endphp
             <div class="card shadow-sm border-0">
                 <div class="card-body p-4">
                     <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">

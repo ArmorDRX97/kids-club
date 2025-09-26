@@ -9,7 +9,9 @@
             <div class="col-md-4"><label class="form-label">Телефон</label><input name="phone" class="form-control" value="{{ old('phone',$user->phone) }}"></div>
             <div class="col-md-4"><label class="form-label">Новый пароль (если менять)</label><input type="password" name="password" class="form-control"></div>
             <div class="col-md-4"><label class="form-label">Повтор пароля</label><input type="password" name="password_confirmation" class="form-control"></div>
-            @php($role = $user->getRoleNames()->first())
+            @php
+                $role = $user->getRoleNames()->first();
+            @endphp
             <div class="col-md-4"><label class="form-label">Роль</label>
                 @if($role === \App\Models\User::ROLE_ADMIN)
                     <input type="hidden" name="role" value="Admin">
