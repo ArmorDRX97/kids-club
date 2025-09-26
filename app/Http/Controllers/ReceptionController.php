@@ -95,12 +95,18 @@ class ReceptionController extends Controller
             }
         }
 
-        $shiftSetting = $user && $user->hasRole(User::ROLE_RECEPTIONIST)
+        $canManage = $user && $user->hasRole(User::ROLE_RECEPTIONIST);
+
+        $shiftSetting = $canManage
             ? $this->shiftManager->getSetting($user)
             : null;
 
         $shiftActive = (bool) $shift;
-        $shiftBlockReason = $shiftActive ? null : 'Начните смену, чтобы отмечать посещения и принимать оплату.';
+        if ($canManage) {
+            $shiftBlockReason = $shiftActive ? null : 'Начните смену, чтобы отмечать посещения и принимать оплату.';
+        } else {
+            $shiftBlockReason = $shiftActive ? null : 'Рабочие действия доступны только ресепшионистам.';
+        }
 
         return view('reception.index', [
             'sectionCards' => $sectionCards,
@@ -113,6 +119,7 @@ class ReceptionController extends Controller
             'shiftSetting' => $shiftSetting,
             'shiftCanStop' => $shiftCanStop,
             'shiftStopLockedUntil' => $shiftStopLockedUntil,
+            'canManage' => $canManage,
         ]);
     }
 
