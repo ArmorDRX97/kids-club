@@ -49,18 +49,24 @@
                     @endif
                 </div>
                 <div class="col-lg-5">
-                    <div class="d-flex flex-column flex-sm-row justify-content-end gap-3">
-                        <form method="POST" action="{{ route('shift.start') }}" class="flex-fill">
-                            @csrf
-                            <button type="submit" class="btn btn-success btn-lg w-100" {{ $shift ? 'disabled' : '' }}>Начать смену</button>
-                        </form>
-                        <form method="POST" action="{{ route('shift.stop') }}" class="flex-fill">
-                            @csrf
-                            <button type="submit" class="btn btn-outline-secondary btn-lg w-100" {{ ($shift && $shiftCanStop) ? '' : 'disabled' }}>Завершить смену</button>
-                        </form>
-                    </div>
-                    @if($shift && !$shiftCanStop && $shiftStopLockedUntil)
-                        <div class="small text-warning text-end mt-2">Доступно после {{ $shiftStopLockedUntil->format('H:i') }}.</div>
+                    @if($canManage)
+                        <div class="d-flex flex-column flex-sm-row justify-content-end gap-3">
+                            <form method="POST" action="{{ route('shift.start') }}" class="flex-fill">
+                                @csrf
+                                <button type="submit" class="btn btn-success btn-lg w-100" {{ $shift ? 'disabled' : '' }}>Начать смену</button>
+                            </form>
+                            <form method="POST" action="{{ route('shift.stop') }}" class="flex-fill">
+                                @csrf
+                                <button type="submit" class="btn btn-outline-secondary btn-lg w-100" {{ ($shift && $shiftCanStop) ? '' : 'disabled' }}>Завершить смену</button>
+                            </form>
+                        </div>
+                        @if($shift && !$shiftCanStop && $shiftStopLockedUntil)
+                            <div class="small text-warning text-end mt-2">Доступно после {{ $shiftStopLockedUntil->format('H:i') }}.</div>
+                        @endif
+                    @else
+                        <div class="text-secondary small text-end">
+                            Управление сменой доступно только ресепшионистам.
+                        </div>
                     @endif
                 </div>
             </div>
@@ -145,6 +151,11 @@
                                 $markButtonLabel = 'Пакет истёк';
                                 $markHelper = 'Продлите пакет, чтобы отметить посещение.';
                             }
+                            if(!$canManage) {
+                                $markDisabled = true;
+                                $markButtonLabel = 'Недоступно';
+                                $markHelper = 'Рабочие действия доступны только ресепшионистам.';
+                            }
                         @endphp
                         <div class="border rounded-3 p-3 mb-3 bg-light">
                             <div class="row align-items-center g-3">
@@ -177,16 +188,25 @@
                                     </div>
                                 </div>
                                 <div class="col-md-auto d-flex flex-wrap gap-2">
-                                    <form class="d-inline" method="POST" action="{{ route('reception.mark') }}" data-attendance-form>
-                                        @csrf
-                                        <input type="hidden" name="child_id" value="{{ $child->id }}">
-                                        <input type="hidden" name="section_id" value="{{ $section->id }}">
-                                        <button class="btn btn-primary" type="submit" {{ $markDisabled ? 'disabled' : '' }}>
+                                    @if($canManage)
+                                        <form class="d-inline" method="POST" action="{{ route('reception.mark') }}" data-attendance-form>
+                                            @csrf
+                                            <input type="hidden" name="child_id" value="{{ $child->id }}">
+                                            <input type="hidden" name="section_id" value="{{ $section->id }}">
+                                            <button class="btn btn-primary" type="submit" {{ $markDisabled ? 'disabled' : '' }}>
+                                                {{ $markButtonLabel }}
+                                            </button>
+                                        </form>
+                                        @if($needsPayment)
+                                            <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#{{ $modalId }}" {{ $shiftActive ? '' : 'disabled' }}>Оплатить</button>
+                                        @endif
+                                    @else
+                                        <button class="btn btn-primary" type="button" disabled>
                                             {{ $markButtonLabel }}
                                         </button>
-                                    </form>
-                                    @if($needsPayment)
-                                        <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#{{ $modalId }}" {{ $shiftActive ? '' : 'disabled' }}>Оплатить</button>
+                                        @if($needsPayment)
+                                            <button class="btn btn-outline-warning" type="button" disabled>Оплатить</button>
+                                        @endif
                                     @endif
                                 </div>
                                 @if($markHelper)
@@ -195,7 +215,7 @@
                             </div>
                         </div>
 
-                        @if($needsPayment)
+                        @if($needsPayment && $canManage)
                             <div class="modal fade" id="{{ $modalId }}" tabindex="-1" aria-hidden="true">
                                 <div class="modal-dialog modal-dialog-centered">
                                     <div class="modal-content">
