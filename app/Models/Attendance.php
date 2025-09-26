@@ -6,8 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Attendance extends Model {
     use HasFactory;
-    protected $fillable = ['child_id','section_id','enrollment_id','room_id','attended_at','marked_by'];
-    protected $casts = ['attended_at' => 'datetime'];
+    protected $fillable = ['child_id','section_id','enrollment_id','room_id','attended_on','attended_at','marked_by'];
+    protected $casts = ['attended_at' => 'datetime', 'attended_on' => 'date'];
     public function child(){ return $this->belongsTo(Child::class); }
     public function section(){ return $this->belongsTo(Section::class); }
     public function enrollment(){ return $this->belongsTo(Enrollment::class); }

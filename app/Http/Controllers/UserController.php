@@ -3,12 +3,17 @@ namespace App\Http\Controllers;
 
 
 use App\Models\User;
+use App\Services\ShiftManager;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 
 class UserController extends Controller
 {
+    public function __construct(private readonly ShiftManager $shiftManager)
+    {
+    }
+
     public function index(Request $request)
     {
         $q = trim($request->get('q',''));
@@ -31,7 +36,7 @@ class UserController extends Controller
             'email' => ['required','email','max:150','unique:users,email'],
             'phone' => ['nullable','string','max:40'],
             'password' => ['required','string','min:8','confirmed'],
-            'role' => ['required', Rule::in(['Receptionist','Admin'])],
+            'role' => ['required', Rule::in([User::ROLE_RECEPTIONIST])],
         ]);
         $user = User::create([
             'name' => $data['name'],
@@ -40,6 +45,9 @@ class UserController extends Controller
             'password' => bcrypt($data['password']),
         ]);
         $user->syncRoles([$data['role']]);
+        if ($user->hasRole(User::ROLE_RECEPTIONIST)) {
+            $this->shiftManager->getSetting($user);
+        }
         return redirect()->route('users.index')->with('success','Пользователь создан');
     }
 
@@ -52,19 +60,30 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
+        $isAdminTarget = $user->hasRole(User::ROLE_ADMIN);
+
         $data = $request->validate([
             'name' => ['required','string','max:120'],
             'email' => ['required','email','max:150', Rule::unique('users','email')->ignore($user->id)],
             'phone' => ['nullable','string','max:40'],
             'password' => ['nullable','string','min:8','confirmed'],
-            'role' => ['required', Rule::in(['Receptionist','Admin'])],
+            'role' => $isAdminTarget
+                ? ['nullable']
+                : ['required', Rule::in([User::ROLE_RECEPTIONIST])],
         ]);
         $user->name = $data['name'];
         $user->email = $data['email'];
         $user->phone = $data['phone'] ?? null;
         if(!empty($data['password'])) $user->password = bcrypt($data['password']);
         $user->save();
-        $user->syncRoles([$data['role']]);
+        if ($isAdminTarget) {
+            $user->syncRoles([User::ROLE_ADMIN]);
+        } else {
+            $user->syncRoles([$data['role']]);
+            if ($user->hasRole(User::ROLE_RECEPTIONIST)) {
+                $this->shiftManager->getSetting($user);
+            }
+        }
         return redirect()->route('users.index')->with('success','Изменения сохранены');
     }
 

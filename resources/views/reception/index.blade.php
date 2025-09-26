@@ -23,11 +23,24 @@
             <div class="row g-4 align-items-center">
                 <div class="col-lg-7">
                     <h2 class="h4 mb-3">Управление сменой</h2>
+                    @php($settingStart = $shiftSetting ? substr($shiftSetting->shift_starts_at,0,5) : null)
+                    @php($settingEnd = $shiftSetting ? substr($shiftSetting->shift_ends_at,0,5) : null)
+                    @if($shiftSetting)
+                        <div class="text-secondary small mb-2">
+                            График: {{ $settingStart }} — {{ $settingEnd }} ·
+                            {{ $shiftSetting->auto_close_enabled ? 'автозакрытие включено' : 'ручное завершение' }}
+                        </div>
+                    @endif
                     @if($shift)
                         <div class="d-flex flex-column gap-2">
                             <div class="text-success fw-semibold">Смена активна с {{ $shift->started_at->format('d.m.Y H:i') }}</div>
+                            <div class="small text-secondary">Запланированное завершение: {{ optional($shift->scheduled_end_at)->format('d.m.Y H:i') ?? '—' }}</div>
                             <div class="small text-secondary">Прошло времени: <span class="fw-semibold" data-shift-timer data-start="{{ $shift->started_at->toIso8601String() }}">{{ $shiftElapsed }}</span></div>
-                            <p class="text-secondary mb-0">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer cursus malesuada est, eget efficitur odio hendrerit id.</p>
+                            @if($shift->auto_close_enabled && $shift->scheduled_end_at)
+                                <div class="small text-secondary">Смена завершится автоматически в {{ $shift->scheduled_end_at->format('H:i') }}.</div>
+                            @elseif(!$shift->auto_close_enabled && $shiftStopLockedUntil && now()->lt($shiftStopLockedUntil))
+                                <div class="small text-warning">Завершить смену можно после {{ $shiftStopLockedUntil->format('H:i') }}.</div>
+                            @endif
                         </div>
                     @else
                         <p class="text-secondary mb-0">Смена ещё не начата. Нажмите «Начать смену», чтобы зафиксировать старт рабочего дня.</p>
@@ -41,13 +54,20 @@
                         </form>
                         <form method="POST" action="{{ route('shift.stop') }}" class="flex-fill">
                             @csrf
-                            <button type="submit" class="btn btn-outline-secondary btn-lg w-100" {{ $shift ? '' : 'disabled' }}>Завершить смену</button>
+                            <button type="submit" class="btn btn-outline-secondary btn-lg w-100" {{ ($shift && $shiftCanStop) ? '' : 'disabled' }}>Завершить смену</button>
                         </form>
                     </div>
+                    @if($shift && !$shiftCanStop && $shiftStopLockedUntil)
+                        <div class="small text-warning text-end mt-2">Доступно после {{ $shiftStopLockedUntil->format('H:i') }}.</div>
+                    @endif
                 </div>
             </div>
         </div>
     </div>
+
+    @if(!$shiftActive && $shiftBlockReason)
+        <div class="alert alert-warning mb-0">{{ $shiftBlockReason }}</div>
+    @endif
 
     @if($q !== '' && $sectionCards->sum('total') === 0)
         <div class="alert alert-warning mb-0">По запросу «{{ $q }}» ничего не найдено.</div>
@@ -85,8 +105,9 @@
                             $already = in_array($child->id, $attendedToday, true);
                             $package = $enrollment->package;
                             $status = $enrollment->status ?? 'pending';
-                            $needsPayment = $status !== 'paid';
                             $price = $enrollment->price ?? ($package->price ?? null);
+                            $paid = (float)($enrollment->total_paid ?? 0);
+                            $needsPayment = ($price !== null && (float)$price > 0) ? $paid + 0.0001 < (float)$price : false;
                             $statusLabels = [
                                 'paid' => 'Оплачено',
                                 'partial' => 'Оплачено частично',
@@ -103,6 +124,25 @@
                             $statusClass = $statusClasses[$status] ?? 'badge bg-secondary';
                             $modalId = 'payment-modal-'.$enrollment->id;
                             $inputId = 'payment-amount-'.$enrollment->id;
+                            $markDisabled = false;
+                            $markButtonLabel = 'Пришёл';
+                            $markHelper = null;
+                            if($already){
+                                $markDisabled = true;
+                                $markButtonLabel = 'Уже отмечен';
+                            } elseif(!$shiftActive) {
+                                $markDisabled = true;
+                                $markButtonLabel = 'Смена не начата';
+                                $markHelper = 'Начните смену, чтобы отмечать посещения.';
+                            } elseif($needsPayment) {
+                                $markDisabled = true;
+                                $markButtonLabel = 'Нужна оплата';
+                                $markHelper = 'Необходимо принять оплату, прежде чем отмечать посещение.';
+                            } elseif($status === 'expired') {
+                                $markDisabled = true;
+                                $markButtonLabel = 'Пакет истёк';
+                                $markHelper = 'Продлите пакет, чтобы отметить посещение.';
+                            }
                         @endphp
                         <div class="border rounded-3 p-3 mb-3 bg-light">
                             <div class="row align-items-center g-3">
@@ -139,14 +179,17 @@
                                         @csrf
                                         <input type="hidden" name="child_id" value="{{ $child->id }}">
                                         <input type="hidden" name="section_id" value="{{ $section->id }}">
-                                        <button class="btn btn-primary" type="submit" {{ $already ? 'disabled' : '' }}>
-                                            {{ $already ? 'Уже отмечен' : 'Пришёл' }}
+                                        <button class="btn btn-primary" type="submit" {{ $markDisabled ? 'disabled' : '' }}>
+                                            {{ $markButtonLabel }}
                                         </button>
                                     </form>
                                     @if($needsPayment)
-                                        <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#{{ $modalId }}">Оплатить</button>
+                                        <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#{{ $modalId }}" {{ $shiftActive ? '' : 'disabled' }}>Оплатить</button>
                                     @endif
                                 </div>
+                                @if($markHelper)
+                                    <div class="small text-danger mt-2">{{ $markHelper }}</div>
+                                @endif
                             </div>
                         </div>
 
