@@ -1,6 +1,6 @@
 <?php
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController, ReceptionSettingController, ReportController, ReceptionSummaryController};
+use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController, ReceptionSettingController, ReportController, ReceptionSummaryController, DashboardController};
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AccountController;
 
@@ -29,7 +29,7 @@ Route::middleware(['auth'])->group(function(){
 });
 
 Route::middleware(['auth'])->group(function(){
-    Route::view('/dashboard','dashboard')->name('dashboard');
+    Route::get('/dashboard',[DashboardController::class,'index'])->name('dashboard');
 
 
 // Смены ресепшена
