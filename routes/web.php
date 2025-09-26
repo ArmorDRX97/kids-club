@@ -1,6 +1,6 @@
 <?php
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController, ReceptionSettingController, ReportController};
+use App\Http\Controllers\{AttendanceController, PaymentController, ShiftController, EnrollmentController, SectionController, ChildController, ReceptionController, RoomController, SectionPackageController, ReceptionSettingController, ReportController, ReceptionSummaryController};
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AccountController;
 
@@ -17,6 +17,7 @@ Route::get('/', function(){ return view('welcome'); });
 
 Route::middleware(['auth','role:Admin'])->group(function(){
     Route::resource('users', UserController::class)->except(['show']);
+    Route::get('/reception/summary', [ReceptionSummaryController::class,'index'])->name('reception.summary');
     Route::get('/reception/settings', [ReceptionSettingController::class,'index'])->name('reception.settings');
     Route::put('/reception/settings/{user}', [ReceptionSettingController::class,'update'])->name('reception.settings.update');
     Route::get('/reports', [ReportController::class,'index'])->name('reports.index');
@@ -32,16 +33,16 @@ Route::middleware(['auth'])->group(function(){
 
 
 // Смены ресепшена
-    Route::post('/shift/start',[ShiftController::class,'start'])->name('shift.start');
-    Route::post('/shift/stop',[ShiftController::class,'stop'])->name('shift.stop');
+    Route::post('/shift/start',[ShiftController::class,'start'])->name('shift.start')->middleware('role:Receptionist');
+    Route::post('/shift/stop',[ShiftController::class,'stop'])->name('shift.stop')->middleware('role:Receptionist');
 
 
 // Посещения
-    Route::post('/attendances',[AttendanceController::class,'store'])->name('attendances.store')->middleware('shift.active');
+    Route::post('/attendances',[AttendanceController::class,'store'])->name('attendances.store')->middleware(['shift.active','role:Receptionist']);
 
 
 // Платежи
-    Route::post('/payments',[PaymentController::class,'store'])->name('payments.store')->middleware('shift.active');
+    Route::post('/payments',[PaymentController::class,'store'])->name('payments.store')->middleware(['shift.active','role:Receptionist']);
 
 
 // Enrollment: прикрепление ребёнка к секции/пакету
@@ -67,8 +68,8 @@ Route::middleware(['auth'])->group(function(){
         Route::post('children/{child}/deactivate',[ChildController::class,'deactivate'])->name('children.deactivate');
         Route::post('children/{child}/activate',[ChildController::class,'activate'])->name('children.activate');
         Route::get('/reception',[ReceptionController::class,'index'])->name('reception.index');
-        Route::post('/reception/mark',[ReceptionController::class,'mark'])->name('reception.mark')->middleware('shift.active');
-        Route::post('/reception/renew',[ReceptionController::class,'renew'])->name('reception.renew');
+        Route::post('/reception/mark',[ReceptionController::class,'mark'])->name('reception.mark')->middleware(['shift.active','role:Receptionist']);
+        Route::post('/reception/renew',[ReceptionController::class,'renew'])->name('reception.renew')->middleware('role:Receptionist');
     });
 });
 
