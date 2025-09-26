@@ -2,7 +2,9 @@
 @if(isset($package))
     @method('PUT')
 @endif
-@php($isActiveValue = (string) old('is_active', isset($package) ? ($package->is_active ? '1' : '0') : '1'))
+@php
+    $isActiveValue = (string) old('is_active', isset($package) ? ($package->is_active ? '1' : '0') : '1');
+@endphp
 <div class="row g-3">
     <div class="col-md-6">
         <label class="form-label">Название</label>

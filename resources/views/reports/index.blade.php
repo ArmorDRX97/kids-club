@@ -51,8 +51,10 @@
         <div class="card card-kpi shadow-sm border-0 h-100">
             <div class="card-body">
                 <div class="text-secondary small">Рабочие часы ресепшена</div>
-                @php($totalMinutes = $shiftTotals->sum('total_minutes'))
-                @php($totalHours = intdiv($totalMinutes, 60))
+                @php
+                    $totalMinutes = $shiftTotals->sum('total_minutes');
+                    $totalHours = intdiv($totalMinutes, 60);
+                @endphp
                 <div class="kpi">{{ $totalHours }}ч {{ $totalMinutes % 60 }}м</div>
                 <div class="text-secondary small mt-1">Смен: {{ $shiftTotals->sum('shifts_count') }}</div>
             </div>
@@ -151,8 +153,10 @@
                             <thead class="table-light"><tr><th>Сотрудник</th><th class="text-end">Смен</th><th class="text-end">Часы</th></tr></thead>
                             <tbody>
                             @foreach($shiftTotals as $row)
-                                @php($minutes = $row['total_minutes'])
-                                @php($hours = intdiv($minutes, 60))
+                                @php
+                                    $minutes = $row['total_minutes'];
+                                    $hours = intdiv($minutes, 60);
+                                @endphp
                                 <tr>
                                     <td>{{ $row['user']->name }}</td>
                                     <td class="text-end">{{ $row['shifts_count'] }}</td>
