@@ -146,7 +146,7 @@
     </div>
 
     <script>
-        const packages = @json($packages->map->only(['id', 'name', 'billing_type', 'visits_count', 'days'])->values());
+        const packages = @json($packagesData);
         const addMap = new Map();
         const removeSet = new Set();
 

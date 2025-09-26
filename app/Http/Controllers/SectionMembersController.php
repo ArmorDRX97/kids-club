@@ -34,11 +34,16 @@ class SectionMembersController extends Controller
         $members = $membersQuery->paginate(15)->withQueryString();
         $packages = $section->packages()->orderBy('name')->get();
 
+        $packagesData = $packages->map(function($pkg){
+            return $pkg->only(['id','name','billing_type','visits_count','days']);
+        })->values();
+
         return view('sections.members.index', [
             'section' => $section,
             'members' => $members,
             'q' => $search,
             'packages' => $packages,
+            'packagesData' => $packagesData
         ]);
     }
 
