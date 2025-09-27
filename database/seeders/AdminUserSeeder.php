@@ -8,8 +8,9 @@ use App\Models\User;
 
 
 class AdminUserSeeder extends Seeder {
-    public function run(): void {
-        $password = Str::random(14); // сгенерируем
+    public function run(): void {     
+    $password = 'GJeoc353kdFVo!5';
+
         $user = User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [

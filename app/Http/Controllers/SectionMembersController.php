@@ -6,6 +6,7 @@ use App\Models\Child;
 use App\Models\Enrollment;
 use App\Models\Package;
 use App\Models\Section;
+use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -34,16 +35,14 @@ class SectionMembersController extends Controller
         $members = $membersQuery->paginate(15)->withQueryString();
         $packages = $section->packages()->orderBy('name')->get();
 
-        $packagesData = $packages->map(function($pkg){
-            return $pkg->only(['id','name','billing_type','visits_count','days']);
-        })->values();
+        $packagesData = $packages->map(fn ($pkg) => $pkg->only(['id', 'name', 'billing_type', 'visits_count', 'days']))->values();
 
         return view('sections.members.index', [
             'section' => $section,
             'members' => $members,
             'q' => $search,
             'packages' => $packages,
-            'packagesData' => $packagesData
+            'packagesData' => $packagesData,
         ]);
     }
 
@@ -76,11 +75,8 @@ class SectionMembersController extends Controller
 
     public function store(Request $request, Section $section)
     {
-        $addPayload = json_decode($request->input('add_payload', '[]'), true);
-        $removePayload = json_decode($request->input('remove_ids', '[]'), true);
-
-        $addPayload = is_array($addPayload) ? $addPayload : [];
-        $removePayload = is_array($removePayload) ? $removePayload : [];
+        $addPayload = json_decode($request->input('add_payload', '[]'), true) ?: [];
+        $removePayload = json_decode($request->input('remove_ids', '[]'), true) ?: [];
 
         $validated = Validator::make([
             'add_payload' => $addPayload,
@@ -94,20 +90,37 @@ class SectionMembersController extends Controller
         ])->validate();
 
         $additions = $validated['add_payload'] ?? [];
-        $removeIds = $validated['remove_ids'] ?? [];
-        $packageIds = collect($additions)->pluck('package_id')->unique()->all();
+        $removeIds = collect($validated['remove_ids'] ?? [])->unique()->values()->all();
 
+        $packageIds = collect($additions)->pluck('package_id')->unique()->all();
         $packages = collect();
 
-        if (!empty($packageIds)) {
+        if (! empty($packageIds)) {
             $packages = $section->packages()->whereIn('id', $packageIds)->get()->keyBy('id');
 
             if ($packages->count() !== count($packageIds)) {
-                return back()->with('error', 'Выбран один или несколько пакетов, не принадлежащих секции.');
+                return back()->with('error', 'Выбран пакет, который не относится к этой секции.');
             }
         }
 
-        if (!empty($removeIds)) {
+        if (! empty($removeIds)) {
+            $removedEnrollments = Enrollment::with(['child', 'package', 'section'])
+                ->where('section_id', $section->id)
+                ->whereIn('child_id', $removeIds)
+                ->get();
+
+            foreach ($removedEnrollments as $enrollment) {
+                if ($enrollment->child) {
+                    ActivityLogger::log($request->user(), 'child.enrollment_removed', $enrollment->child, [
+                        'section_id' => $section->id,
+                        'section_name' => $section->name,
+                        'package_id' => $enrollment->package_id,
+                        'package_name' => $enrollment->package?->name,
+                        'enrollment_id' => $enrollment->id,
+                    ]);
+                }
+            }
+
             Enrollment::where('section_id', $section->id)
                 ->whereIn('child_id', $removeIds)
                 ->update([
@@ -117,7 +130,7 @@ class SectionMembersController extends Controller
                 ]);
         }
 
-        if (!empty($additions)) {
+        if (! empty($additions)) {
             foreach ($additions as $item) {
                 $childId = (int) $item['child_id'];
                 $packageId = (int) $item['package_id'];
@@ -162,11 +175,24 @@ class SectionMembersController extends Controller
                 }
 
                 $enrollment->save();
+                $enrollment->load(['child']);
+
+                if ($enrollment->child) {
+                    ActivityLogger::log($request->user(), 'child.enrollment_added', $enrollment->child, [
+                        'section_id' => $section->id,
+                        'section_name' => $section->name,
+                        'package_id' => $package->id,
+                        'package_name' => $package->name,
+                        'enrollment_id' => $enrollment->id,
+                    ]);
+                }
             }
         }
 
         return redirect()
             ->route('sections.members.index', $section)
-            ->with('success', 'Изменения сохранены');
+            ->with('success', 'Изменения сохранены.');
     }
 }
+
+

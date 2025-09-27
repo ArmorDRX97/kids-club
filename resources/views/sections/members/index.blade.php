@@ -5,27 +5,18 @@
 
     <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
         <a href="{{ route('sections.index') }}" class="btn btn-link">← Назад к списку секций</a>
-        <button
-            type="button"
-            class="btn btn-primary"
-            data-bs-toggle="modal"
-            data-bs-target="#addModal"
-            {{ $packages->isEmpty() ? 'disabled' : '' }}
-        >
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal" {{ $packages->isEmpty() ? 'disabled' : '' }}>
             Добавить детей
         </button>
         @if($packages->isEmpty())
             <span class="text-danger small">Чтобы прикрепить детей, создайте пакеты для секции.</span>
         @endif
-        <a href="{{ route('sections.packages.index', $section) }}" class="btn btn-outline-secondary btn-sm">Управление пакетами</a>
+        @role('Admin')
+            <a href="{{ route('sections.packages.index', $section) }}" class="btn btn-outline-secondary btn-sm">Управление пакетами</a>
+        @endrole
     </div>
 
-    <form
-        method="POST"
-        action="{{ route('sections.members.store', $section) }}"
-        id="membersForm"
-        onsubmit="return beforeSubmit()"
-    >
+    <form method="POST" action="{{ route('sections.members.store', $section) }}" id="membersForm" onsubmit="return beforeSubmit()">
         @csrf
         <div class="card mb-3">
             <div class="card-body">
@@ -39,12 +30,12 @@
                 <div class="table-responsive">
                     <table class="table table-striped align-middle mb-0">
                         <thead class="table-light">
-                            <tr>
-                                <th>ФИО</th>
-                                <th>Телефон</th>
-                                <th>Пакет</th>
-                                <th>Действие</th>
-                            </tr>
+                        <tr>
+                            <th>ФИО</th>
+                            <th>Телефон</th>
+                            <th>Пакет</th>
+                            <th>Действие</th>
+                        </tr>
                         </thead>
                         <tbody id="currentRows">
                         @forelse($members as $membership)
@@ -56,7 +47,7 @@
                                     <div class="text-secondary small">
                                         {{ $membership->package->billing_type === 'visits' ? 'По занятиям' : 'По времени' }}
                                         @if($membership->package->billing_type === 'visits' && $membership->package->visits_count)
-                                            · {{ $membership->package->visits_count }} занятий
+                                            · {{ $membership->package->visits_count }} зан.
                                         @endif
                                         @if($membership->package->billing_type === 'period' && $membership->package->days)
                                             · {{ $membership->package->days }} дн.
@@ -64,11 +55,7 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-danger"
-                                        onclick="stageRemove({{ $membership->child->id }}, this)"
-                                    >
+                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="stageRemove({{ $membership->child->id }}, this)">
                                         Открепить
                                     </button>
                                 </td>
@@ -91,12 +78,12 @@
                 <div class="table-responsive">
                     <table class="table mb-0" id="stagedTable">
                         <thead class="table-light">
-                            <tr>
-                                <th>ФИО</th>
-                                <th>Телефон</th>
-                                <th>Пакет</th>
-                                <th>Действие</th>
-                            </tr>
+                        <tr>
+                            <th>ФИО</th>
+                            <th>Телефон</th>
+                            <th>Пакет</th>
+                            <th>Действие</th>
+                        </tr>
                         </thead>
                         <tbody></tbody>
                     </table>
@@ -122,17 +109,17 @@
                 </div>
                 <div class="modal-body">
                     <div class="input-group mb-3">
-                        <input id="searchInput" class="form-control" placeholder="Поиск (ФИО/телефон)">
+                        <input id="searchInput" class="form-control" placeholder="Поиск (ФИО или телефон)">
                         <button class="btn btn-outline-secondary" type="button" onclick="doSearch()">Найти</button>
                     </div>
                     <div class="table-responsive">
                         <table class="table align-middle mb-0">
                             <thead class="table-light">
-                                <tr>
-                                    <th>ФИО</th>
-                                    <th>Телефон</th>
-                                    <th></th>
-                                </tr>
+                            <tr>
+                                <th>ФИО</th>
+                                <th>Телефон</th>
+                                <th></th>
+                            </tr>
                             </thead>
                             <tbody id="searchResults"></tbody>
                         </table>
@@ -166,7 +153,7 @@
             });
 
             if (hasError) {
-                alert('Для каждого ребёнка выберите пакет.');
+                alert('Для каждого добавляемого ребёнка выберите пакет.');
                 return false;
             }
 
@@ -178,13 +165,17 @@
 
         function stageRemove(id, button) {
             const row = button.closest('tr');
+            if (!row) {
+                return;
+            }
+
             if (removeSet.has(id)) {
                 removeSet.delete(id);
-                row?.classList.remove('table-warning');
+                row.classList.remove('table-warning');
                 button.textContent = 'Открепить';
             } else {
                 removeSet.add(id);
-                row?.classList.add('table-warning');
+                row.classList.add('table-warning');
                 button.textContent = 'Отменить';
             }
         }

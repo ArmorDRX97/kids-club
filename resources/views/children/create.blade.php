@@ -44,8 +44,7 @@
 
             <div class="col-12 form-check form-switch mt-2">
                 <input type="hidden" name="is_active" value="0">
-                <input class="form-check-input" type="checkbox" role="switch" id="is_active"
-                       name="is_active" value="1" @checked(old('is_active', 1))>
+                <input class="form-check-input" type="checkbox" role="switch" id="is_active" name="is_active" value="1" @checked(old('is_active', 1))>
                 <label class="form-check-label" for="is_active">Активен</label>
             </div>
         </div>

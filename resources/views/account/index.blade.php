@@ -11,4 +11,12 @@
                 <div class="col-12"><button class="btn btn-primary">Обновить пароль</button></div>
             </form>
         </div></div>
+
+        <hr>
+        <form method="POST" action="{{ route('logout') }}">
+    @csrf
+    <button type="submit" class="btn btn-danger">
+        Выйти
+    </button>
+</form>
 @endsection
