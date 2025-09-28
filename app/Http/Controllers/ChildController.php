@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Child;
+use App\Models\Section;
+use App\Models\SectionSchedule;
 use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -65,23 +67,69 @@ class ChildController extends Controller
             'name' => $child->full_name,
         ]);
 
-        return redirect()
-            ->route('children.show', $child)
-            ->with('success', 'Ребёнок добавлен.');
+        return redirect()->route('children.show', $child)->with('success', 'Карточка ребёнка создана.');
     }
 
     public function show(Child $child)
     {
         $child->load([
-            'enrollments' => fn ($query) => $query->with(['section', 'package'])->latest('started_at'),
+            'enrollments' => fn ($query) => $query->with(['section.direction', 'package', 'schedule'])->latest('started_at'),
             'payments' => fn ($query) => $query->with(['enrollment.section', 'enrollment.package', 'user'])->latest('paid_at'),
         ]);
 
-        $history = $child->activityLogs()->with('user')->get();
+        $history = $child->activityLogs()->with('user')->latest()->get();
+
+        $availableSections = Section::with([
+                'direction:id,name',
+                'schedules',
+                'packages' => fn ($query) => $query->where('is_active', true),
+            ])
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        $weekdayMap = [
+            1 => 'Понедельник',
+            2 => 'Вторник',
+            3 => 'Среда',
+            4 => 'Четверг',
+            5 => 'Пятница',
+            6 => 'Суббота',
+            7 => 'Воскресенье',
+        ];
+
+        $sectionsPayload = $availableSections->map(function (Section $section) use ($weekdayMap) {
+            return [
+                'id' => $section->id,
+                'name' => $section->name,
+                'direction' => $section->direction?->name,
+                'schedules' => $section->schedules
+                    ->sortBy(fn (SectionSchedule $schedule) => $schedule->weekday * 10000 + (int) $schedule->starts_at->format('Hi'))
+                    ->map(fn (SectionSchedule $schedule) => [
+                        'id' => $schedule->id,
+                        'weekday' => $schedule->weekday,
+                        'label' => $this->humanScheduleLabel($schedule->weekday, $schedule->starts_at->format('H:i'), $schedule->ends_at->format('H:i'), $weekdayMap),
+                    ])->values(),
+                'packages' => $section->packages->map(fn ($package) => [
+                    'id' => $package->id,
+                    'name' => $package->name,
+                    'billing_type' => $package->billing_type,
+                    'visits_count' => $package->visits_count,
+                    'days' => $package->days,
+                    'price' => (float) $package->price,
+                ])->values(),
+            ];
+        });
+
+        $outstandingEnrollments = $child->enrollments->filter(fn ($enrollment) => $enrollment->status !== 'paid');
+        $totalDebt = $outstandingEnrollments->sum(fn ($enrollment) => max(0, ($enrollment->price ?? 0) - ($enrollment->total_paid ?? 0)));
 
         return view('children.show', [
             'child' => $child,
             'history' => $history,
+            'sectionsPayload' => $sectionsPayload,
+            'outstandingEnrollments' => $outstandingEnrollments,
+            'totalDebt' => $totalDebt,
         ]);
     }
 
@@ -106,25 +154,18 @@ class ChildController extends Controller
         $child->fill($data);
 
         if (! $child->isDirty()) {
-            return redirect()
-                ->route('children.show', $child)
-                ->with('info', 'Изменений не обнаружено.');
+            return redirect()->route('children.show', $child)->with('info', 'Изменений не обнаружено.');
         }
 
         $changes = [];
-        $dirty = $child->getDirty();
-
-        foreach ($dirty as $key => $new) {
+        foreach ($child->getDirty() as $key => $new) {
             $old = $child->getOriginal($key);
-
             if ($new instanceof Carbon) {
                 $new = $new->toDateString();
             }
-
             if ($old instanceof Carbon) {
                 $old = $old->toDateString();
             }
-
             $changes[$key] = [
                 'old' => $old,
                 'new' => $new,
@@ -137,9 +178,7 @@ class ChildController extends Controller
             'changes' => $changes,
         ]);
 
-        return redirect()
-            ->route('children.show', $child)
-            ->with('success', 'Данные обновлены.');
+        return redirect()->route('children.show', $child)->with('success', 'Данные обновлены.');
     }
 
     public function destroy(Request $request, Child $child)
@@ -150,9 +189,7 @@ class ChildController extends Controller
 
         $child->delete();
 
-        return redirect()
-            ->route('children.index')
-            ->with('success', 'Ребёнок удалён.');
+        return redirect()->route('children.index')->with('success', 'Карточка ребёнка удалена.');
     }
 
     public function deactivate(Request $request, Child $child)
@@ -177,9 +214,7 @@ class ChildController extends Controller
             'had_active_package' => $hasActivePaid,
         ]);
 
-        return redirect()
-            ->route('children.index', ['deleted' => 1])
-            ->with('success', 'Ребёнок отмечен как неактивный.');
+        return redirect()->route('children.index', ['deleted' => 1])->with('success', 'Карточка ребёнка временно отключена.');
     }
 
     public function activate(Request $request, Child $child)
@@ -189,10 +224,13 @@ class ChildController extends Controller
 
         ActivityLogger::log($request->user(), 'child.activated', $child);
 
-        return redirect()
-            ->route('children.show', $child)
-            ->with('success', 'Ребёнок снова активен.');
+        return redirect()->route('children.show', $child)->with('success', 'Карточка ребёнка снова активна.');
+    }
+
+    protected function humanScheduleLabel(int $weekday, string $startsAt, string $endsAt, array $weekdayMap): string
+    {
+        $day = $weekdayMap[$weekday] ?? $weekday;
+
+        return sprintf('%s %s – %s', $day, $startsAt, $endsAt);
     }
 }
-
-

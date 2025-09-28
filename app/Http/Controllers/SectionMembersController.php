@@ -6,6 +6,7 @@ use App\Models\Child;
 use App\Models\Enrollment;
 use App\Models\Package;
 use App\Models\Section;
+use App\Models\SectionSchedule;
 use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -14,7 +15,9 @@ class SectionMembersController extends Controller
 {
     public function index(Request $request, Section $section)
     {
-        $membersQuery = Enrollment::with(['child', 'package'])
+        $section->load('schedules');
+
+        $membersQuery = Enrollment::with(['child', 'package', 'schedule'])
             ->where('section_id', $section->id)
             ->whereHas('child', fn ($query) => $query->where('is_active', true))
             ->latest('started_at');
@@ -37,12 +40,35 @@ class SectionMembersController extends Controller
 
         $packagesData = $packages->map(fn ($pkg) => $pkg->only(['id', 'name', 'billing_type', 'visits_count', 'days']))->values();
 
+        $weekdayNames = [
+            1 => 'Пн',
+            2 => 'Вт',
+            3 => 'Ср',
+            4 => 'Чт',
+            5 => 'Пт',
+            6 => 'Сб',
+            7 => 'Вс',
+        ];
+
+        $schedulesData = $section->schedules
+            ->sortBy(fn ($schedule) => $schedule->weekday * 10000 + (int) $schedule->starts_at->format('Hi'))
+            ->map(function (SectionSchedule $schedule) use ($weekdayNames) {
+                return [
+                    'id' => $schedule->id,
+                    'label' => ($weekdayNames[$schedule->weekday] ?? $schedule->weekday)
+                        . ' ' . $schedule->starts_at->format('H:i')
+                        . ' – ' . $schedule->ends_at->format('H:i'),
+                ];
+            })
+            ->values();
+
         return view('sections.members.index', [
             'section' => $section,
             'members' => $members,
             'q' => $search,
             'packages' => $packages,
             'packagesData' => $packagesData,
+            'schedulesData' => $schedulesData,
         ]);
     }
 
@@ -85,6 +111,7 @@ class SectionMembersController extends Controller
             'add_payload' => ['array'],
             'add_payload.*.child_id' => ['required', 'integer', 'exists:children,id'],
             'add_payload.*.package_id' => ['required', 'integer', 'exists:packages,id'],
+            'add_payload.*.schedule_id' => ['required', 'integer', 'exists:section_schedules,id'],
             'remove_ids' => ['array'],
             'remove_ids.*' => ['integer', 'exists:children,id'],
         ])->validate();
@@ -93,18 +120,28 @@ class SectionMembersController extends Controller
         $removeIds = collect($validated['remove_ids'] ?? [])->unique()->values()->all();
 
         $packageIds = collect($additions)->pluck('package_id')->unique()->all();
+        $scheduleIds = collect($additions)->pluck('schedule_id')->unique()->all();
         $packages = collect();
+        $schedules = collect();
 
         if (! empty($packageIds)) {
             $packages = $section->packages()->whereIn('id', $packageIds)->get()->keyBy('id');
 
             if ($packages->count() !== count($packageIds)) {
-                return back()->with('error', 'Выбран пакет, который не относится к этой секции.');
+                return back()->with('error', 'Выбранные пакеты не относятся к этой секции.');
+            }
+        }
+
+        if (! empty($scheduleIds)) {
+            $schedules = $section->schedules()->whereIn('id', $scheduleIds)->get()->keyBy('id');
+
+            if ($schedules->count() !== count($scheduleIds)) {
+                return back()->with('error', 'Выбран неверный временной интервал.');
             }
         }
 
         if (! empty($removeIds)) {
-            $removedEnrollments = Enrollment::with(['child', 'package', 'section'])
+            $removedEnrollments = Enrollment::with(['child', 'package', 'section', 'schedule'])
                 ->where('section_id', $section->id)
                 ->whereIn('child_id', $removeIds)
                 ->get();
@@ -116,6 +153,8 @@ class SectionMembersController extends Controller
                         'section_name' => $section->name,
                         'package_id' => $enrollment->package_id,
                         'package_name' => $enrollment->package?->name,
+                        'schedule_id' => $enrollment->section_schedule_id,
+                        'schedule_label' => $enrollment->schedule ? $this->formatScheduleLabel($enrollment->schedule) : null,
                         'enrollment_id' => $enrollment->id,
                     ]);
                 }
@@ -134,6 +173,7 @@ class SectionMembersController extends Controller
             foreach ($additions as $item) {
                 $childId = (int) $item['child_id'];
                 $packageId = (int) $item['package_id'];
+                $scheduleId = (int) $item['schedule_id'];
 
                 $activeEnrollment = Enrollment::where('child_id', $childId)
                     ->where('section_id', $section->id)
@@ -150,14 +190,16 @@ class SectionMembersController extends Controller
 
                 /** @var Package|null $package */
                 $package = $packages[$packageId] ?? null;
+                $schedule = $schedules[$scheduleId] ?? null;
 
-                if (! $package) {
+                if (! $package || ! $schedule) {
                     continue;
                 }
 
                 $enrollment = new Enrollment();
                 $enrollment->child_id = $childId;
                 $enrollment->section_id = $section->id;
+                $enrollment->section_schedule_id = $schedule->id;
                 $enrollment->package_id = $package->id;
                 $enrollment->started_at = now()->toDateString();
                 $enrollment->price = $package->price;
@@ -175,7 +217,7 @@ class SectionMembersController extends Controller
                 }
 
                 $enrollment->save();
-                $enrollment->load(['child']);
+                $enrollment->load('child');
 
                 if ($enrollment->child) {
                     ActivityLogger::log($request->user(), 'child.enrollment_added', $enrollment->child, [
@@ -183,16 +225,31 @@ class SectionMembersController extends Controller
                         'section_name' => $section->name,
                         'package_id' => $package->id,
                         'package_name' => $package->name,
+                        'schedule_id' => $schedule->id,
+                        'schedule_label' => $this->formatScheduleLabel($schedule),
                         'enrollment_id' => $enrollment->id,
                     ]);
                 }
             }
         }
 
-        return redirect()
-            ->route('sections.members.index', $section)
-            ->with('success', 'Изменения сохранены.');
+        return redirect()->route('sections.members.index', $section)->with('success', 'Изменения сохранены.');
+    }
+
+    protected function formatScheduleLabel(SectionSchedule $schedule): string
+    {
+        $weekdayMap = [
+            1 => 'Понедельник',
+            2 => 'Вторник',
+            3 => 'Среда',
+            4 => 'Четверг',
+            5 => 'Пятница',
+            6 => 'Суббота',
+            7 => 'Воскресенье',
+        ];
+
+        $day = $weekdayMap[$schedule->weekday] ?? $schedule->weekday;
+
+        return sprintf('%s %s – %s', $day, $schedule->starts_at->format('H:i'), $schedule->ends_at->format('H:i'));
     }
 }
-
-

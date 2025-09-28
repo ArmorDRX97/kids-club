@@ -6,6 +6,7 @@ use App\Models\Enrollment;
 use App\Models\Payment;
 use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
@@ -19,36 +20,50 @@ class PaymentController extends Controller
             'comment' => ['nullable', 'string'],
         ]);
 
-        $enrollment = Enrollment::with(['child', 'section', 'package'])->findOrFail($data['enrollment_id']);
+        DB::transaction(function () use ($request, $data) {
+            $enrollment = Enrollment::with(['child', 'section', 'package', 'schedule'])->findOrFail($data['enrollment_id']);
 
-        $payment = Payment::create([
-            'enrollment_id' => $enrollment->id,
-            'child_id' => $enrollment->child_id,
-            'amount' => $data['amount'],
-            'paid_at' => $data['paid_at'] ?? now(),
-            'method' => $data['method'] ?? null,
-            'comment' => $data['comment'] ?? null,
-            'user_id' => $request->user()->id,
-        ]);
+            $schedule = $enrollment->schedule;
+            if ($schedule) {
+                $now = now();
+                $isToday = (int) $schedule->weekday === $now->isoWeekday();
+                $withinSlot = $isToday
+                    && $now->between(
+                        $schedule->starts_at->copy()->setDate($now->year, $now->month, $now->day),
+                        $schedule->ends_at->copy()->setDate($now->year, $now->month, $now->day)
+                    );
 
-        $enrollment->total_paid = ($enrollment->total_paid ?? 0) + $payment->amount;
-        $enrollment->save();
+                if (! $withinSlot) {
+                    abort(back()->with('error', 'Оплата доступна только во время занятия.'));
+                }
+            }
 
-        $enrollment->refreshStatus();
+            $payment = Payment::create([
+                'enrollment_id' => $enrollment->id,
+                'child_id' => $enrollment->child_id,
+                'amount' => $data['amount'],
+                'paid_at' => $data['paid_at'] ?? now(),
+                'method' => $data['method'] ?? null,
+                'comment' => $data['comment'] ?? null,
+                'user_id' => $request->user()->id,
+            ]);
 
-        ActivityLogger::log($request->user(), 'child.payment_recorded', $enrollment->child, [
-            'section_id' => $enrollment->section_id,
-            'section_name' => $enrollment->section?->name,
-            'package_id' => $enrollment->package_id,
-            'package_name' => $enrollment->package?->name,
-            'payment_id' => $payment->id,
-            'amount' => $payment->amount,
-            'method' => $payment->method,
-            'enrollment_id' => $enrollment->id,
-        ]);
+            $enrollment->total_paid = ($enrollment->total_paid ?? 0) + $payment->amount;
+            $enrollment->save();
+            $enrollment->refreshStatus();
 
-        return back()->with('success', 'Платёж сохранён.');
+            ActivityLogger::log($request->user(), 'child.payment_recorded', $enrollment->child, [
+                'section_id' => $enrollment->section_id,
+                'section_name' => $enrollment->section?->name,
+                'package_id' => $enrollment->package_id,
+                'package_name' => $enrollment->package?->name,
+                'payment_id' => $payment->id,
+                'amount' => $payment->amount,
+                'method' => $payment->method,
+                'enrollment_id' => $enrollment->id,
+            ]);
+        });
+
+        return back()->with('success', 'Оплата сохранена.');
     }
 }
-
-

@@ -1,68 +1,78 @@
+
 @extends('layouts.app')
 
 @section('content')
-    <h1 class="h4 mb-3">Дети секции: {{ $section->name }}</h1>
+    <h1 class="h4 mb-3">Участники секции: {{ $section->name }}</h1>
 
     <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
         <a href="{{ route('sections.index') }}" class="btn btn-link">← Назад к списку секций</a>
-        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal" {{ $packages->isEmpty() ? 'disabled' : '' }}>
-            Добавить детей
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal" {{ ($packages->isEmpty() || $schedulesData->isEmpty()) ? 'disabled' : '' }}>
+            Добавить ребёнка
         </button>
         @if($packages->isEmpty())
-            <span class="text-danger small">Чтобы прикрепить детей, создайте пакеты для секции.</span>
+            <span class="text-danger small">Чтобы записать детей, создайте хотя бы один пакет.</span>
         @endif
-        @role('Admin')
-            <a href="{{ route('sections.packages.index', $section) }}" class="btn btn-outline-secondary btn-sm">Управление пакетами</a>
-        @endrole
+        @if($schedulesData->isEmpty())
+            <span class="text-danger small">Для секции нет расписания. Добавьте временные интервалы.</span>
+        @endif
     </div>
 
     <form method="POST" action="{{ route('sections.members.store', $section) }}" id="membersForm" onsubmit="return beforeSubmit()">
         @csrf
-        <div class="card mb-3">
+        <div class="card mb-3 shadow-sm">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                    <div class="fw-semibold">Текущие прикрепления</div>
+                    <div class="fw-semibold">Активные участники</div>
                     <div class="d-flex">
-                        <input type="text" id="searchCurrent" class="form-control form-control-sm" placeholder="Поиск" value="{{ $q }}">
-                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="filterCurrent()">Найти</button>
+                        <input type="text" id="searchCurrent" class="form-control form-control-sm" placeholder="Фильтр" value="{{ $q }}">
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="filterCurrent()">Поиск</button>
                     </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-striped align-middle mb-0">
                         <thead class="table-light">
                         <tr>
-                            <th>ФИО</th>
-                            <th>Телефон</th>
+                            <th>Имя</th>
+                            <th>Контакты</th>
+                            <th>Расписание</th>
                             <th>Пакет</th>
-                            <th>Действие</th>
+                            <th>Действия</th>
                         </tr>
                         </thead>
                         <tbody id="currentRows">
                         @forelse($members as $membership)
+                            @php
+                                $weekdayNames = [1 => 'Пн', 2 => 'Вт', 3 => 'Ср', 4 => 'Чт', 5 => 'Пт', 6 => 'Сб', 7 => 'Вс'];
+                                $schedule = $membership->schedule;
+                                $scheduleLabel = $schedule
+                                    ? (($weekdayNames[$schedule->weekday] ?? $schedule->weekday) . ' ' . $schedule->starts_at->format('H:i') . ' – ' . $schedule->ends_at->format('H:i'))
+                                    : 'Не выбрано';
+                            @endphp
                             <tr data-id="{{ $membership->child->id }}">
-                                <td>{{ $membership->child->full_name }}</td>
-                                <td>{{ $membership->child->parent_phone ?? $membership->child->child_phone ?? '—' }}</td>
+                                <td data-name>{{ $membership->child->full_name }}</td>
+                                <td data-phone>{{ $membership->child->parent_phone ?? $membership->child->child_phone ?? '—' }}</td>
+                                <td>{{ $scheduleLabel }}</td>
                                 <td>
                                     <div class="fw-semibold">{{ $membership->package->name }}</div>
                                     <div class="text-secondary small">
-                                        {{ $membership->package->billing_type === 'visits' ? 'По занятиям' : 'По времени' }}
+                                        {{ $membership->package->billing_type === 'visits' ? 'По занятиям' : 'По периоду' }}
                                         @if($membership->package->billing_type === 'visits' && $membership->package->visits_count)
-                                            · {{ $membership->package->visits_count }} зан.
+                                            — {{ $membership->package->visits_count }} занятий
                                         @endif
                                         @if($membership->package->billing_type === 'period' && $membership->package->days)
-                                            · {{ $membership->package->days }} дн.
+                                            — {{ $membership->package->days }} дней
                                         @endif
                                     </div>
                                 </td>
                                 <td>
                                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="stageRemove({{ $membership->child->id }}, this)">
-                                        Открепить
+                                        Отметить к удалению
                                     </button>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="4" class="text-center text-secondary py-3">Нет прикреплённых детей</td>
+                                <td colspan="5" class="text-center text-secondary py-3">Записей пока нет.</td>
                             </tr>
                         @endforelse
                         </tbody>
@@ -74,13 +84,14 @@
 
         <div class="card d-none" id="stagedCard">
             <div class="card-body">
-                <div class="fw-semibold mb-2">Новые прикрепляемые дети</div>
+                <div class="fw-semibold mb-2">Изменения ожидают подтверждения</div>
                 <div class="table-responsive">
                     <table class="table mb-0" id="stagedTable">
                         <thead class="table-light">
                         <tr>
-                            <th>ФИО</th>
-                            <th>Телефон</th>
+                            <th>Имя</th>
+                            <th>Контакты</th>
+                            <th>Расписание</th>
                             <th>Пакет</th>
                             <th>Действие</th>
                         </tr>
@@ -95,7 +106,7 @@
         <input type="hidden" name="remove_ids" id="remove_ids">
 
         <div class="mt-3 d-flex gap-2">
-            <button class="btn btn-success" type="submit">Сохранить</button>
+            <button class="btn btn-success" type="submit">Сохранить изменения</button>
             <a href="{{ route('sections.index') }}" class="btn btn-link">Отмена</a>
         </div>
     </form>
@@ -104,20 +115,20 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Добавить детей</h5>
+                    <h5 class="modal-title">Добавление ребёнка</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
                 </div>
                 <div class="modal-body">
                     <div class="input-group mb-3">
-                        <input id="searchInput" class="form-control" placeholder="Поиск (ФИО или телефон)">
-                        <button class="btn btn-outline-secondary" type="button" onclick="doSearch()">Найти</button>
+                        <input id="searchInput" class="form-control" placeholder="Имя или телефон">
+                        <button class="btn btn-outline-secondary" type="button" onclick="doSearch()">Искать</button>
                     </div>
                     <div class="table-responsive">
                         <table class="table align-middle mb-0">
                             <thead class="table-light">
                             <tr>
-                                <th>ФИО</th>
-                                <th>Телефон</th>
+                                <th>Имя</th>
+                                <th>Контакты</th>
                                 <th></th>
                             </tr>
                             </thead>
@@ -126,68 +137,50 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Готово</button>
                 </div>
             </div>
         </div>
     </div>
+@endsection
 
+@push('scripts')
     <script>
         const packages = @json($packagesData);
+        const schedules = @json($schedulesData);
         const addMap = new Map();
-        const removeSet = new Set();
+        const removeMap = new Map();
 
-        function beforeSubmit() {
-            const payload = [];
-            let hasError = false;
+        const scheduleOptions = schedules.map((option) => `<option value="${option.id}">${option.label}</option>`).join('');
 
-            addMap.forEach((_, childId) => {
-                const select = document.querySelector(`#pkg-select-${childId}`);
-                if (!select || !select.value) {
-                    hasError = true;
-                    select?.classList.add('is-invalid');
-                    return;
-                }
-                select.classList.remove('is-invalid');
-                payload.push({ child_id: childId, package_id: parseInt(select.value, 10) });
-            });
-
-            if (hasError) {
-                alert('Для каждого добавляемого ребёнка выберите пакет.');
-                return false;
-            }
-
-            document.getElementById('add_payload').value = JSON.stringify(payload);
-            document.getElementById('remove_ids').value = JSON.stringify([...removeSet]);
-
-            return true;
+        function renderScheduleSelect(childId) {
+            return `<select class="form-select form-select-sm" id="schedule-select-${childId}">${scheduleOptions}</select>`;
         }
 
-        function stageRemove(id, button) {
-            const row = button.closest('tr');
-            if (!row) {
+        function renderPackageSelect(childId) {
+            const options = packages.map((pkg) => {
+                let details = '—';
+                if (pkg.billing_type === 'visits' && pkg.visits_count) {
+                    details = `${pkg.visits_count} занятий`;
+                } else if (pkg.billing_type === 'period' && pkg.days) {
+                    details = `${pkg.days} дней`;
+                }
+                return `<option value="${pkg.id}">${pkg.name} (${details})</option>`;
+            }).join('');
+
+            return `<select class="form-select form-select-sm" id="pkg-select-${childId}">${options}</select>`;
+        }
+
+        function ensureStagedCard() {
+            const card = document.getElementById('stagedCard');
+            if (!card) {
                 return;
             }
-
-            if (removeSet.has(id)) {
-                removeSet.delete(id);
-                row.classList.remove('table-warning');
-                button.textContent = 'Открепить';
+            if (addMap.size > 0 || removeMap.size > 0) {
+                card.classList.remove('d-none');
             } else {
-                removeSet.add(id);
-                row.classList.add('table-warning');
-                button.textContent = 'Отменить';
+                card.classList.add('d-none');
             }
-        }
-
-        document.getElementById('searchCurrent')?.addEventListener('input', filterCurrent);
-
-        function filterCurrent() {
-            const query = document.getElementById('searchCurrent').value.trim().toLowerCase();
-            document.querySelectorAll('#currentRows tr').forEach((tr) => {
-                const text = tr.textContent.toLowerCase();
-                tr.style.display = text.includes(query) ? '' : 'none';
-            });
         }
 
         function stageAdd(row) {
@@ -196,13 +189,15 @@
                 return;
             }
 
-            if (!packages.length) {
-                alert('Сначала создайте пакеты для секции.');
+            if (!packages.length || !schedules.length) {
+                alert('Для записи нужна хотя бы одна активная программа и временной слот.');
                 return;
             }
 
             addMap.set(id, true);
-            document.getElementById('stagedCard').classList.remove('d-none');
+            removeMap.delete(id);
+
+            ensureStagedCard();
 
             const name = row.querySelector('[data-name]')?.textContent?.trim() ?? '';
             const phone = row.querySelector('[data-phone]')?.textContent?.trim() || '—';
@@ -212,6 +207,7 @@
             stagedRow.innerHTML = `
                 <td>${name}</td>
                 <td>${phone}</td>
+                <td>${renderScheduleSelect(id)}</td>
                 <td>${renderPackageSelect(id)}</td>
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="unstage(${id}, this)">Убрать</button>
@@ -230,8 +226,8 @@
             addMap.delete(id);
             button.closest('tr')?.remove();
 
-            if (addMap.size === 0) {
-                document.getElementById('stagedCard').classList.add('d-none');
+            if (addMap.size === 0 && removeMap.size === 0) {
+                ensureStagedCard();
             }
 
             const searchRowButton = document.querySelector(`#searchResults tr[data-id="${id}"] button`);
@@ -240,25 +236,71 @@
             }
         }
 
-        function renderPackageSelect(childId) {
-            const options = packages.map((pkg) => {
-                let details = '—';
-                if (pkg.billing_type === 'visits' && pkg.visits_count) {
-                    details = `${pkg.visits_count} зан.`;
-                } else if (pkg.billing_type === 'period' && pkg.days) {
-                    details = `${pkg.days} дн.`;
-                }
-                return `<option value="${pkg.id}">${pkg.name} (${details})</option>`;
-            }).join('');
+        function stageRemove(id, button) {
+            const row = button.closest('tr');
+            if (!row) {
+                return;
+            }
 
-            return `<select class="form-select form-select-sm" id="pkg-select-${childId}">${options}</select>`;
+            if (removeMap.has(id)) {
+                removeMap.delete(id);
+                row.classList.remove('table-danger');
+                button.textContent = 'Отметить к удалению';
+            } else {
+                removeMap.set(id, true);
+                row.classList.add('table-danger');
+                button.textContent = 'Вернуть';
+            }
+
+            ensureStagedCard();
+        }
+
+        function beforeSubmit() {
+            if (addMap.size === 0 && removeMap.size === 0) {
+                alert('Нет изменений для сохранения.');
+                return false;
+            }
+
+            const additions = [];
+            document.querySelectorAll('#stagedTable tbody tr').forEach((row) => {
+                const id = parseInt(row.dataset.id ?? '0', 10);
+                if (Number.isNaN(id)) {
+                    return;
+                }
+                const pkgSelect = row.querySelector(`#pkg-select-${id}`);
+                const scheduleSelect = row.querySelector(`#schedule-select-${id}`);
+                if (!pkgSelect || !scheduleSelect) {
+                    return;
+                }
+                additions.push({
+                    child_id: id,
+                    package_id: parseInt(pkgSelect.value, 10),
+                    schedule_id: parseInt(scheduleSelect.value, 10),
+                });
+            });
+
+            document.getElementById('add_payload').value = JSON.stringify(additions);
+            document.getElementById('remove_ids').value = JSON.stringify(Array.from(removeMap.keys()));
+
+            return true;
+        }
+
+        function filterCurrent() {
+            const query = document.getElementById('searchCurrent').value.trim().toLowerCase();
+            document.querySelectorAll('#currentRows tr').forEach((tr) => {
+                const text = tr.textContent.toLowerCase();
+                tr.style.display = text.includes(query) ? '' : 'none';
+            });
         }
 
         async function doSearch() {
             const query = document.getElementById('searchInput').value.trim();
             const tbody = document.getElementById('searchResults');
-
             tbody.innerHTML = '';
+
+            if (!query) {
+                return;
+            }
 
             try {
                 const response = await fetch(`{{ route('sections.members.search', $section) }}?q=${encodeURIComponent(query)}`);
@@ -267,9 +309,8 @@
                 }
 
                 const data = await response.json();
-
                 if (!Array.isArray(data) || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-secondary py-3">Ничего не найдено</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="3" class="text-center text-secondary py-3">Совпадений не найдено</td></tr>';
                     return;
                 }
 
@@ -278,16 +319,16 @@
                     tr.dataset.id = item.id;
                     tr.innerHTML = `
                         <td data-name>${item.last_name} ${item.first_name} ${item.patronymic ?? ''}</td>
-                        <td data-phone>${item.child_phone ?? ''}</td>
+                        <td data-phone>${item.child_phone ?? '—'}</td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-primary" onclick="stageAdd(this.closest('tr'))">Добавить</button>
+                            <button type="button" class="btn btn-sm btn-primary" ${addMap.has(item.id) ? 'disabled' : ''} onclick="stageAdd(this.closest('tr'))">Добавить</button>
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
             } catch (error) {
                 console.error(error);
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger py-3">Ошибка загрузки данных</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger py-3">Ошибка загрузки результатов поиска.</td></tr>';
             }
         }
 
@@ -301,4 +342,4 @@
             filterCurrent();
         }
     </script>
-@endsection
+@endpush

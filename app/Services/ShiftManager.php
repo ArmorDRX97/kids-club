@@ -43,6 +43,11 @@ class ShiftManager
             $scheduledEnd->addDay();
         }
 
+        while ($scheduledEnd->lessThanOrEqualTo($now)) {
+            $scheduledStart->addDay();
+            $scheduledEnd->addDay();
+        }
+
         $shift = Shift::create([
             'user_id' => $user->id,
             'started_at' => $now,
@@ -58,7 +63,8 @@ class ShiftManager
     {
         $moment ??= Carbon::now();
         $shift->ended_at = $moment;
-        $shift->duration_min = $shift->started_at->diffInMinutes($moment);
+        $diffMinutes = $shift->started_at->diffInMinutes($moment, false);
+        $shift->duration_min = max(0, $diffMinutes);
         $shift->closed_automatically = $auto;
         $shift->save();
 
@@ -73,7 +79,12 @@ class ShiftManager
             && !$shift->ended_at
             && Carbon::now()->greaterThanOrEqualTo($shift->scheduled_end_at)
         ) {
-            $this->closeShift($shift, $shift->scheduled_end_at, true);
+            $autoMoment = $shift->scheduled_end_at->copy();
+            while ($autoMoment->lessThan($shift->started_at)) {
+                $autoMoment->addDay();
+            }
+
+            $this->closeShift($shift, $autoMoment, true);
             $shift->refresh();
         }
 

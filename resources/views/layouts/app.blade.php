@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru" data-bs-theme="light">
 <head>
     <meta charset="utf-8">

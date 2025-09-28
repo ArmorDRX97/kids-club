@@ -1,156 +1,190 @@
 <?php
-namespace App\Http\Controllers;
-use App\Models\{Section, Room};
-use Illuminate\Http\Request;
 
+namespace App\Http\Controllers;
+
+use App\Models\Direction;
+use App\Models\Room;
+use App\Models\Section;
+use App\Models\SectionSchedule;
+use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SectionController extends Controller
 {
     public function index()
     {
-        $parents = Section::whereNull('parent_id')
-            ->with([
-                'room',
-                'children' => function($query){
-                    $query->with('room')->withCount(['enrollments','packages']);
-                },
-            ])
-            ->withCount(['enrollments','packages'])
+        $directions = Direction::with(['sections' => function ($query) {
+            $query->withCount(['enrollments', 'packages'])->with(['room', 'schedules']);
+        }])->orderBy('name')->get();
+
+        $orphanSections = Section::whereNull('direction_id')
+            ->withCount(['enrollments', 'packages'])
+            ->with(['room', 'schedules'])
             ->orderBy('name')
             ->get();
 
-        return view('sections.index', compact('parents'));
+        return view('sections.index', [
+            'directions' => $directions,
+            'orphanSections' => $orphanSections,
+        ]);
     }
 
     public function create()
     {
-        $parents = Section::orderBy('name')->get();
-        $rooms = Room::orderBy('name')->get();
-        return view('sections.create', compact('parents','rooms'));
+        return view('sections.create', [
+            'directions' => Direction::orderBy('name')->get(),
+            'rooms' => Room::orderBy('name')->get(),
+        ]);
     }
-
 
     public function store(Request $request)
     {
-        $payload = $request->all();
+        [$data, $schedulePayload] = $this->validateSection($request);
 
-        if ($request->input('schedule_type') === 'monthly') {
-            $payload['weekdays'] = [];
-            $payload['month_days'] = $this->parseMonthDays($request->input('month_days'));
-        } else {
-            $payload['month_days'] = [];
-            $weekdays = $request->input('weekdays', []);
-            $payload['weekdays'] = is_array($weekdays)
-                ? collect($weekdays)->map(fn($v) => (int) $v)->unique()->values()->all()
-                : [];
-        }
+        DB::transaction(function () use ($data, $schedulePayload) {
+            /** @var Section $section */
+            $section = Section::create($data);
 
-        $payload['is_active'] = isset($payload['is_active']) ? (bool) $payload['is_active'] : true;
+            $section->schedules()->createMany($schedulePayload);
+        });
 
-        $data = \Validator::make($payload, [
-            'name'=>['required','string','max:150'],
-            'parent_id'=>['nullable','exists:sections,id'],
-            'room_id'=>['nullable','exists:rooms,id'],
-            'is_active'=>['boolean'],
-            'schedule_type'=>['required','in:weekly,monthly'],
-            'weekdays'=>['nullable','array'],
-            'weekdays.*'=>['integer','between:1,7'],
-            'month_days'=>['nullable','array'],
-            'month_days.*'=>['integer','between:1,31'],
-        ])->validate();
-
-        $section = Section::create($data);
-        return redirect()->route('sections.index')->with('success','Секция сохранена');
+        return redirect()->route('sections.index')->with('success', 'Секция создана.');
     }
+
     public function edit(Section $section)
     {
-        $parents = Section::where('id','!=',$section->id)->orderBy('name')->get();
-        $rooms = Room::orderBy('name')->get();
-        $kidsCount = $section->enrollments()->count();
-        return view('sections.edit', compact('section','parents','rooms','kidsCount'));
+        $section->load('schedules');
+
+        $lockedScheduleIds = $section->enrollments()
+            ->whereNotNull('section_schedule_id')
+            ->pluck('section_schedule_id')
+            ->unique()
+            ->toArray();
+
+        return view('sections.edit', [
+            'section' => $section,
+            'directions' => Direction::orderBy('name')->get(),
+            'rooms' => Room::orderBy('name')->get(),
+            'scheduleMatrix' => $section->schedules
+                ->groupBy('weekday')
+                ->map(fn ($items) => $items->map(fn (SectionSchedule $schedule) => [
+                    'id' => $schedule->id,
+                    'starts_at' => $schedule->starts_at->format('H:i'),
+                    'ends_at' => $schedule->ends_at->format('H:i'),
+                ])->values())
+                ->toArray(),
+            'lockedScheduleIds' => $lockedScheduleIds,
+            'enrollmentsCount' => $section->enrollments()->count(),
+        ]);
     }
 
     public function update(Request $request, Section $section)
     {
-        $kidsCount = $section->enrollments()->count();
+        [$data, $schedulePayload] = $this->validateSection($request, $section->id);
 
-        // сначала подготовим данные
-        $data = $request->all();
+        DB::transaction(function () use ($section, $data, $schedulePayload) {
+            $section->update($data);
+            $section->load('schedules');
 
-        // преобразуем month_days: строка -> массив чисел
-        if ($request->schedule_type === 'monthly') {
-            $data['month_days'] = $this->parseMonthDays($request->input('month_days'));
-            $data['weekdays'] = [];
-        } else {
-            $weekdays = $request->input('weekdays', []);
-            $data['weekdays'] = is_array($weekdays)
-                ? collect($weekdays)->map(fn($v) => (int) $v)->unique()->values()->all()
-                : [];
-            $data['month_days'] = [];
-        }
+            $referencedScheduleIds = $section->enrollments()
+                ->whereNotNull('section_schedule_id')
+                ->pluck('section_schedule_id')
+                ->toArray();
 
-        // чтобы Laravel видел is_active как boolean
-        $data['is_active'] = isset($data['is_active']) ? (bool)$data['is_active'] : false;
+            $section->schedules()->whereNotIn('id', $referencedScheduleIds)->delete();
+            $section->load('schedules');
 
-        // теперь валидируем
-        $validated = \Validator::make($data, [
-            'name'              => ['required','string','max:150'],
-            'parent_id'         => ['nullable','exists:sections,id'],
-            'room_id'           => ['nullable','exists:rooms,id'],
-            'is_active'         => ['boolean'],
-            'schedule_type'     => ['required','in:weekly,monthly'],
-            'weekdays'          => ['nullable','array'],
-            'weekdays.*'        => ['integer','between:1,7'],
-            'month_days'        => ['nullable','array'],
-            'month_days.*'      => ['integer','between:1,31'],
-        ])->validate();
+            $existingByKey = $section->schedules
+                ->keyBy(fn (SectionSchedule $schedule) => $schedule->weekday . '|' . $schedule->starts_at->format('H:i') . '|' . $schedule->ends_at->format('H:i'));
 
-        // нельзя деактивировать, если есть дети
-        if (($validated['is_active'] ?? $section->is_active) == false && $kidsCount > 0) {
-            return back()->with('error','Нельзя деактивировать секцию — есть прикреплённые дети');
-        }
+            $newEntries = [];
+            foreach ($schedulePayload as $item) {
+                $key = $item['weekday'] . '|' . $item['starts_at'] . '|' . $item['ends_at'];
+                if (! $existingByKey->has($key)) {
+                    $newEntries[] = $item;
+                }
+            }
 
-        // нельзя выбрать саму себя как parent
-        if(isset($validated['parent_id']) && (int)$validated['parent_id'] === $section->id) {
-            unset($validated['parent_id']);
-        }
+            if (! empty($newEntries)) {
+                $section->schedules()->createMany($newEntries);
+            }
+        });
 
-        $section->update($validated);
-
-        return redirect()->route('sections.index')->with('success','Обновлено');
+        return redirect()->route('sections.index')->with('success', 'Секция обновлена.');
     }
-
 
     public function destroy(Section $section)
     {
         if ($section->enrollments()->exists()) {
-            return back()->with('error','Нельзя удалить секцию — есть прикреплённые дети');
+            return back()->with('error', 'Нельзя удалить секцию, у которой есть активные записи.');
         }
+
         $section->delete();
-        return redirect()->route('sections.index')->with('success','Удалено');
-}
 
-    /**
-     * @param  mixed  $value
-     * @return array<int,int>
-     */
-    protected function parseMonthDays(mixed $value): array
+        return redirect()->route('sections.index')->with('success', 'Секция удалена.');
+    }
+
+    private function validateSection(Request $request, ?int $sectionId = null): array
     {
-        if (is_string($value)) {
-            $parts = array_map('trim', explode(',', $value));
-        } elseif (is_array($value)) {
-            $parts = $value;
-        } else {
-            $parts = [];
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'direction_id' => ['nullable', 'exists:directions,id'],
+            'room_id' => ['nullable', 'exists:rooms,id'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
+
+        $data['is_active'] = (bool) ($data['is_active'] ?? true);
+
+        $scheduleInput = $request->input('schedule', []);
+        if (! is_array($scheduleInput) || empty($scheduleInput)) {
+            throw ValidationException::withMessages(['schedule' => 'Нужно указать расписание секции.']);
         }
 
-        $days = collect($parts)
-            ->map(fn($item) => (int) $item)
-            ->filter(fn($item) => $item >= 1 && $item <= 31)
-            ->unique()
-            ->values()
-            ->all();
+        $parsed = [];
+        foreach ($scheduleInput as $weekday => $rows) {
+            if (! is_numeric($weekday)) {
+                continue;
+            }
+            $weekday = (int) $weekday;
+            if ($weekday < 1 || $weekday > 7) {
+                continue;
+            }
 
-        return $days;
+            if (! is_array($rows)) {
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $startsAt = Arr::get($row, 'starts_at');
+                $endsAt = Arr::get($row, 'ends_at');
+
+                if (! $this->isValidTime($startsAt) || ! $this->isValidTime($endsAt)) {
+                    throw ValidationException::withMessages(['schedule' => 'Неверный формат времени. Используйте ЧЧ:ММ.']);
+                }
+
+                if (strtotime($startsAt) >= strtotime($endsAt)) {
+                    throw ValidationException::withMessages(['schedule' => 'Время начала должно быть меньше времени окончания.']);
+                }
+
+                $parsed[] = [
+                    'weekday' => $weekday,
+                    'starts_at' => $startsAt,
+                    'ends_at' => $endsAt,
+                ];
+            }
+        }
+
+        if (empty($parsed)) {
+            throw ValidationException::withMessages(['schedule' => 'Добавьте хотя бы один временной слот.']);
+        }
+
+        return [$data, $parsed];
+    }
+
+    private function isValidTime(?string $value): bool
+    {
+        return is_string($value) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $value) === 1;
     }
 }

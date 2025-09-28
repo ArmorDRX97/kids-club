@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\ChildController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DirectionController;
 use App\Http\Controllers\EnrollmentController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ReceptionController;
@@ -30,6 +31,9 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::resource('users', UserController::class)->except(['show']);
+    Route::post('/directions', [DirectionController::class, 'store'])->name('directions.store');
+    Route::put('/directions/{direction}', [DirectionController::class, 'update'])->name('directions.update');
+    Route::delete('/directions/{direction}', [DirectionController::class, 'destroy'])->name('directions.destroy');
     Route::get('/reception/summary', [ReceptionSummaryController::class, 'index'])->name('reception.summary');
     Route::get('/reception/settings', [ReceptionSettingController::class, 'index'])->name('reception.settings');
     Route::put('/reception/settings/{user}', [ReceptionSettingController::class, 'update'])->name('reception.settings.update');
