@@ -41,6 +41,11 @@ class Child extends Model
         return $this->hasMany(Attendance::class);
     }
 
+    public function trialAttendances()
+    {
+        return $this->hasMany(TrialAttendance::class);
+    }
+
     public function activityLogs()
     {
         return $this->hasMany(ActivityLog::class, 'model_id')

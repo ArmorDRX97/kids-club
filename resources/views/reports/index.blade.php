@@ -50,13 +50,9 @@
     <div class="col-md-3">
         <div class="card card-kpi shadow-sm border-0 h-100">
             <div class="card-body">
-                <div class="text-secondary small">Рабочие часы ресепшена</div>
-                @php
-                    $totalMinutes = $shiftTotals->sum('total_minutes');
-                    $totalHours = intdiv($totalMinutes, 60);
-                @endphp
-                <div class="kpi">{{ $totalHours }}ч {{ $totalMinutes % 60 }}м</div>
-                <div class="text-secondary small mt-1">Смен: {{ $shiftTotals->sum('shifts_count') }}</div>
+                <div class="text-secondary small">Системные отметки</div>
+                <div class="kpi">{{ $systemMarkedTotal }}</div>
+                <div class="text-secondary small mt-1">Возвращено: {{ $restoredVisitsTotal }}</div>
             </div>
         </div>
     </div>

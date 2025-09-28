@@ -30,6 +30,18 @@ class ReportController extends Controller
 
         $attendanceTotal = Attendance::whereBetween('attended_on', [$from->toDateString(), $to->toDateString()])->count();
         $uniqueChildren = Attendance::whereBetween('attended_on', [$from->toDateString(), $to->toDateString()])->distinct('child_id')->count('child_id');
+        
+        // Системные отметки отсутствия
+        $systemMarkedTotal = Attendance::whereBetween('attended_on', [$from->toDateString(), $to->toDateString()])
+            ->where('source', 'system')
+            ->where('status', 'missed')
+            ->count();
+        
+        $restoredVisitsTotal = Attendance::whereBetween('attended_on', [$from->toDateString(), $to->toDateString()])
+            ->where('source', 'system')
+            ->where('status', 'missed')
+            ->whereNotNull('restored_at')
+            ->count();
         $paymentsTotal = Payment::whereBetween('paid_at', [$from, $to])->sum('amount');
         $newEnrollments = Enrollment::whereBetween('started_at', [$from->toDateString(), $to->toDateString()])->count();
 
@@ -93,6 +105,8 @@ class ReportController extends Controller
             'shiftRecords' => $shiftRecords,
             'shiftTotals' => $shiftTotals,
             'daysInRange' => $daysInRange,
+            'systemMarkedTotal' => $systemMarkedTotal,
+            'restoredVisitsTotal' => $restoredVisitsTotal,
         ]);
     }
 }

@@ -75,9 +75,19 @@ class ChildController extends Controller
         $child->load([
             'enrollments' => fn ($query) => $query->with(['section.direction', 'package', 'schedule'])->latest('started_at'),
             'payments' => fn ($query) => $query->with(['enrollment.section', 'enrollment.package', 'user'])->latest('paid_at'),
+            'attendances' => fn ($query) => $query->with(['section', 'marker', 'restorer'])->latest('attended_on'),
+            'trialAttendances' => fn ($query) => $query->with(['section', 'marker'])->latest('attended_on'),
         ]);
 
         $history = $child->activityLogs()->with('user')->latest()->get();
+
+        // Получаем системные отметки (отсутствия)
+        $systemMarkedAttendances = $child->attendances()
+            ->where('source', 'system')
+            ->where('status', 'missed')
+            ->with(['section', 'restorer'])
+            ->latest('attended_on')
+            ->get();
 
         $availableSections = Section::with([
                 'direction:id,name',
@@ -98,11 +108,15 @@ class ChildController extends Controller
             7 => 'Воскресенье',
         ];
 
-        $sectionsPayload = $availableSections->map(function (Section $section) use ($weekdayMap) {
+        $sectionsPayload = $availableSections->map(function (Section $section) use ($weekdayMap, $child) {
             return [
                 'id' => $section->id,
                 'name' => $section->name,
                 'direction' => $section->direction?->name,
+                'has_trial' => $section->has_trial,
+                'trial_is_free' => $section->trial_is_free,
+                'trial_price' => $section->trial_price ? (float) $section->trial_price : null,
+                'has_child_trial' => $section->hasChildTrialAttendance($child),
                 'schedules' => $section->schedules
                     ->sortBy(fn (SectionSchedule $schedule) => $schedule->weekday * 10000 + (int) $schedule->starts_at->format('Hi'))
                     ->map(fn (SectionSchedule $schedule) => [
@@ -122,7 +136,15 @@ class ChildController extends Controller
         });
 
         $outstandingEnrollments = $child->enrollments->filter(fn ($enrollment) => $enrollment->status !== 'paid');
-        $totalDebt = $outstandingEnrollments->sum(fn ($enrollment) => max(0, ($enrollment->price ?? 0) - ($enrollment->total_paid ?? 0)));
+        $enrollmentDebt = $outstandingEnrollments->sum(fn ($enrollment) => max(0, ($enrollment->price ?? 0) - ($enrollment->total_paid ?? 0)));
+        
+        // Добавляем задолженности по пробным занятиям
+        $trialDebt = $child->trialAttendances
+            ->where('is_free', false)
+            ->where('paid_amount', 0)
+            ->sum('price');
+        
+        $totalDebt = $enrollmentDebt + $trialDebt;
 
         return view('children.show', [
             'child' => $child,
@@ -130,6 +152,8 @@ class ChildController extends Controller
             'sectionsPayload' => $sectionsPayload,
             'outstandingEnrollments' => $outstandingEnrollments,
             'totalDebt' => $totalDebt,
+            'systemMarkedAttendances' => $systemMarkedAttendances,
+            'trialAttendances' => $child->trialAttendances,
         ]);
     }
 

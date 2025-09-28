@@ -25,26 +25,26 @@ class AttendanceController extends Controller
             ->latest('started_at')
             ->first();
 
-        if (! $enrollment) {
-            return back()->with('error', '�?��' ����'��?�?�?�?�? ���?���?����>��?��? �� �?�'�?�� �?���Ő��.');
+        if (!$enrollment) {
+            return back()->with('error', 'Прикрепление ребёнка к секции не найдено.');
         }
 
         if ($enrollment->expires_at && now()->gt($enrollment->expires_at)) {
-            return back()->with('error', '���?�?�� �?����?�'�?��? �������'�� ��?�'�'��.');
+            return back()->with('error', 'Срок действия прикрепления истёк.');
         }
 
-        if (! is_null($enrollment->visits_left) && $enrollment->visits_left < 1) {
-            return back()->with('error', '�"�?�?�'�?���?�<�� ���?�?��%��?��? ������?�?�ؐ�>��?�?.');
+        if (!is_null($enrollment->visits_left) && $enrollment->visits_left < 1) {
+            return back()->with('error', 'У ребёнка закончились посещения по абонементу.');
         }
 
         $requiredAmount = $enrollment->price ?? ($enrollment->package?->price ?? 0);
         if ($requiredAmount > 0 && $enrollment->total_paid < $requiredAmount) {
-            return back()->with('error', '�?��>�?���? �?�'�?��'��'�? ���?�?��%��?��� �+��� �?���>���'�< �������'��.');
+            return back()->with('error', 'Сначала примите оплату за прикрепление ребёнка к секции.');
         }
 
         $schedule = $enrollment->schedule;
-        if (! $schedule) {
-            return back()->with('error', '�"�>�? �?�'�?�?�? ���?���?����>��?��? �?�� �����?���? �?�?��?��?�?�?�� ��?�'��?�?���>.');
+        if (!$schedule) {
+            return back()->with('error', 'У прикрепления ребёнка к секции не выбрано расписание.');
         }
 
         $now = now();
@@ -53,13 +53,13 @@ class AttendanceController extends Controller
         $slotEnd = $schedule->ends_at->copy()->setDate($now->year, $now->month, $now->day);
         $withinSlot = $isToday && $now->between($slotStart, $slotEnd);
 
-        if (! $withinSlot) {
-            return back()->with('error', '�?�'�?��'��'�? ���?�?��%��?��� �?�?��?�? �'�?�>�?��? �?�? �?�?��?�? �����?�?�'��?.');
+        if (!$withinSlot) {
+            return back()->with('error', 'Посещение можно отметить только во время занятия.');
         }
 
-        $duplicateMessage = '�?�� �?��?�?�?�?�? �?��+�'�?�?�� �?��� �?�'�?��ؐ�?.';
-        $successPrefix = '�?�?�?��%��?��� �?�'�?��ؐ�?�?. �?�?�'���>�?�?�? �����?�?�'���: ';
-        $successUnlimitedLabel = '�+����>��?��'';
+        $duplicateMessage = 'Ребёнок уже отмечен как посетивший занятие.';
+        $successPrefix = 'Посещение отмечено. Осталось посещений: ';
+        $successUnlimitedLabel = 'Безлимитно';
         $remainingVisits = $enrollment->visits_left;
 
         $today = $now->toDateString();
@@ -101,7 +101,7 @@ class AttendanceController extends Controller
                     ]);
                     $attendance->save();
 
-                    if ($statusBefore === 'restored' && ! is_null($enrollment->visits_left)) {
+                    if ($statusBefore === 'restored' && !is_null($enrollment->visits_left)) {
                         $enrollment->decrement('visits_left');
                     }
 
@@ -119,7 +119,7 @@ class AttendanceController extends Controller
                         'marked_by' => $request->user()->id,
                     ]);
 
-                    if (! is_null($enrollment->visits_left)) {
+                    if (!is_null($enrollment->visits_left)) {
                         $enrollment->decrement('visits_left');
                     }
                 }

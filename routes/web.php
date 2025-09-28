@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\AttendanceRestoreController;
 use App\Http\Controllers\ChildController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DirectionController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\SectionController;
 use App\Http\Controllers\SectionMembersController;
 use App\Http\Controllers\SectionPackageController;
 use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\TrialAttendanceController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -55,12 +57,17 @@ Route::middleware(['auth', 'restrict.receptionist'])->group(function () {
 
     // Посещения
     Route::post('/attendances', [AttendanceController::class, 'store'])->name('attendances.store')->middleware(['shift.active', 'role:Receptionist']);
+    Route::post('/attendances/{attendance}/restore', [AttendanceRestoreController::class, 'restore'])->name('attendances.restore');
 
     // Платежи
     Route::post('/payments', [PaymentController::class, 'store'])->name('payments.store')->middleware(['shift.active', 'role:Receptionist']);
 
     // Enrollment: прикрепление ребёнка к секции/пакету
     Route::post('/enrollments', [EnrollmentController::class, 'store'])->name('enrollments.store');
+
+    // Пробные занятия
+    Route::post('/trial-attendances', [TrialAttendanceController::class, 'store'])->name('trial-attendances.store')->middleware(['shift.active', 'role:Receptionist']);
+    Route::get('/children/{child}/trial-attendances', [TrialAttendanceController::class, 'show'])->name('children.trial-attendances');
 
     Route::middleware(['role:Admin'])->group(function () {
         Route::resource('sections', SectionController::class)->except(['index', 'show']);
@@ -81,6 +88,7 @@ Route::middleware(['auth', 'restrict.receptionist'])->group(function () {
         Route::post('children/{child}/activate', [ChildController::class, 'activate'])->name('children.activate');
         Route::get('/reception', [ReceptionController::class, 'index'])->name('reception.index');
         Route::post('/reception/mark', [ReceptionController::class, 'mark'])->name('reception.mark')->middleware(['shift.active', 'role:Receptionist']);
+        Route::post('/reception/mark-trial', [ReceptionController::class, 'markTrial'])->name('reception.mark-trial')->middleware(['shift.active', 'role:Receptionist']);
         Route::post('/reception/renew', [ReceptionController::class, 'renew'])->name('reception.renew')->middleware('role:Receptionist');
     });
 });

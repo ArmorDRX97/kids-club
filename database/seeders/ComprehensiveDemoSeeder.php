@@ -15,6 +15,7 @@ use App\Models\Section;
 use App\Models\SectionSchedule;
 use App\Models\Shift;
 use App\Models\Teacher;
+use App\Models\TrialAttendance;
 use App\Models\User;
 use Carbon\CarbonPeriod;
 use Faker\Factory as FakerFactory;
@@ -33,6 +34,7 @@ class ComprehensiveDemoSeeder extends Seeder
 
         DB::transaction(function () use ($faker, $monthStart, $today) {
             Attendance::query()->delete();
+            TrialAttendance::query()->delete();
             Payment::query()->delete();
             Enrollment::query()->delete();
             ActivityLog::query()->delete();
@@ -72,6 +74,11 @@ class ComprehensiveDemoSeeder extends Seeder
                                 ['name' => '8 занятий', 'billing_type' => 'visits', 'visits_count' => 8, 'price' => 26000],
                                 ['name' => 'Абонемент на месяц', 'billing_type' => 'period', 'days' => 30, 'price' => 36000],
                             ],
+                            'trial' => [
+                                'has_trial' => true,
+                                'trial_is_free' => true,
+                                'trial_price' => null,
+                            ],
                         ],
                         [
                             'name' => 'Студия лепки',
@@ -84,6 +91,11 @@ class ComprehensiveDemoSeeder extends Seeder
                             'packages' => [
                                 ['name' => '6 занятий', 'billing_type' => 'visits', 'visits_count' => 6, 'price' => 21000],
                                 ['name' => 'Интенсив 14 дней', 'billing_type' => 'period', 'days' => 14, 'price' => 18000],
+                            ],
+                            'trial' => [
+                                'has_trial' => true,
+                                'trial_is_free' => false,
+                                'trial_price' => 3000,
                             ],
                         ],
                     ],
@@ -116,6 +128,11 @@ class ComprehensiveDemoSeeder extends Seeder
                                 ['name' => '8 занятий', 'billing_type' => 'visits', 'visits_count' => 8, 'price' => 24000],
                                 ['name' => 'Абонемент на месяц', 'billing_type' => 'period', 'days' => 30, 'price' => 30000],
                             ],
+                            'trial' => [
+                                'has_trial' => true,
+                                'trial_is_free' => false,
+                                'trial_price' => 5000,
+                            ],
                         ],
                     ],
                 ],
@@ -137,6 +154,9 @@ class ComprehensiveDemoSeeder extends Seeder
                         'direction_id' => $direction->id,
                         'room_id' => $rooms[$sectionData['room']]?->id,
                         'is_active' => true,
+                        'has_trial' => $sectionData['trial']['has_trial'] ?? false,
+                        'trial_is_free' => $sectionData['trial']['trial_is_free'] ?? true,
+                        'trial_price' => $sectionData['trial']['trial_price'] ?? null,
                     ]);
                     $sections->push($section);
 
@@ -445,13 +465,65 @@ class ComprehensiveDemoSeeder extends Seeder
                 $enrollment->refreshStatus();
             }
 
+            // Создание пробных занятий
+            $trialSections = $sections->filter(fn($section) => $section->has_trial);
+            $trialChildren = $children->where('is_active', true)->random(rand(8, 15));
+            
+            foreach ($trialChildren as $child) {
+                $trialSection = $trialSections->random();
+                
+                // Проверяем, что у ребенка еще нет пробного занятия в этой секции
+                if ($trialSection->hasChildTrialAttendance($child)) {
+                    continue;
+                }
+                
+                $trialDate = Carbon::parse($faker->dateTimeBetween($monthStart, $today));
+                $isFree = $trialSection->trial_is_free;
+                $paidAmount = 0;
+                
+                // Если платное пробное занятие, иногда оплачиваем его
+                if (!$isFree && $faker->boolean(70)) {
+                    $paidAmount = $trialSection->trial_price;
+                }
+                
+                $trialAttendance = TrialAttendance::create([
+                    'child_id' => $child->id,
+                    'section_id' => $trialSection->id,
+                    'attended_on' => $trialDate,
+                    'attended_at' => $trialDate,
+                    'is_free' => $isFree,
+                    'price' => $trialSection->trial_price,
+                    'paid_amount' => $paidAmount,
+                    'payment_method' => $paidAmount > 0 ? $faker->randomElement(['cash', 'card']) : null,
+                    'payment_comment' => $paidAmount > 0 && $faker->boolean(30) ? $faker->sentence() : null,
+                    'marked_by' => $receptionists->random()->id,
+                ]);
+                
+                ActivityLog::create([
+                    'user_id' => $trialAttendance->marked_by,
+                    'action' => 'trial_attendance.created',
+                    'model' => TrialAttendance::class,
+                    'model_id' => $trialAttendance->id,
+                    'payload' => [
+                        'child_id' => $child->id,
+                        'section_id' => $trialSection->id,
+                        'section_name' => $trialSection->name,
+                        'is_free' => $isFree,
+                        'price' => $trialSection->trial_price,
+                        'paid_amount' => $paidAmount,
+                        'attended_on' => $trialDate->toDateString(),
+                    ],
+                ]);
+            }
+
             $this->command?->info(sprintf(
-                "Сгенерировано: %d детей, %d секций, %d пакетов, %d отметок, %d платежей, %d смен",
+                "Сгенерировано: %d детей, %d секций, %d пакетов, %d отметок, %d платежей, %d пробных занятий, %d смен",
                 $children->count(),
                 Section::count(),
                 $packages->count(),
                 Attendance::count(),
                 Payment::count(),
+                TrialAttendance::count(),
                 Shift::count()
             ));
         });

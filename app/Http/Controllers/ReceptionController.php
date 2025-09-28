@@ -6,6 +6,7 @@ use App\Models\Attendance;
 use App\Models\Enrollment;
 use App\Models\Section;
 use App\Models\SectionSchedule;
+use App\Models\TrialAttendance;
 use App\Models\User;
 use App\Services\ShiftManager;
 use App\Support\ActivityLogger;
@@ -38,6 +39,12 @@ class ReceptionController extends Controller
         ])->where('is_active', true)->orderBy('name')->get();
 
         $attendanceToday = Attendance::where('attended_on', $today->toDateString())
+            ->whereIn('section_id', $sections->pluck('id'))
+            ->get()
+            ->groupBy('section_id')
+            ->map(fn ($items) => $items->pluck('child_id')->unique()->values()->all());
+
+        $trialAttendanceToday = TrialAttendance::where('attended_on', $today->toDateString())
             ->whereIn('section_id', $sections->pluck('id'))
             ->get()
             ->groupBy('section_id')
@@ -100,7 +107,7 @@ class ReceptionController extends Controller
 
         $hasSearch = $q !== '';
 
-        $sectionCards = $sections->map(function (Section $section) use ($weekday, $now, $attendanceToday, $q, $hasSearch, $weekdayNames, $fullWeekdayNames, $shiftActive) {
+        $sectionCards = $sections->map(function (Section $section) use ($weekday, $now, $attendanceToday, $trialAttendanceToday, $q, $hasSearch, $weekdayNames, $fullWeekdayNames, $shiftActive) {
             $todaySlots = $section->schedules
                 ->filter(fn (SectionSchedule $slot) => $slot->weekday === $weekday)
                 ->sortBy('starts_at');
@@ -117,6 +124,7 @@ class ReceptionController extends Controller
             });
 
             $attendanceList = collect($attendanceToday[$section->id] ?? []);
+            $trialAttendanceList = collect($trialAttendanceToday[$section->id] ?? []);
 
             $enrollments = [];
             $hasMatches = false;
@@ -148,6 +156,7 @@ class ReceptionController extends Controller
                 $nextStartLabel = $slotStart && $slotStart->isFuture() ? $slotStart->format('H:i') : null;
 
                 $alreadyAttended = $attendanceList->contains($child->id);
+                $alreadyTrialAttended = $trialAttendanceList->contains($child->id);
                 $needsPayment = ($enrollment->price ?? 0) > ($enrollment->total_paid ?? 0);
 
                 $statusLabels = [
@@ -203,6 +212,7 @@ class ReceptionController extends Controller
                     'status_class' => $statusClasses[$status] ?? 'badge bg-secondary',
                     'needs_payment' => $needsPayment,
                     'already_attended' => $alreadyAttended,
+                    'already_trial_attended' => $alreadyTrialAttended,
                     'mark_disabled' => $markDisabled,
                     'mark_helper' => $markHelper,
                     'payment_disabled' => $paymentDisabled,
@@ -250,125 +260,240 @@ class ReceptionController extends Controller
         ]);
     }
 
-        public function mark(Request \)
+    public function mark(Request $request)
     {
-        \ = \->validate([
+        $data = $request->validate([
             'child_id' => ['required', 'exists:children,id'],
             'section_id' => ['required', 'exists:sections,id'],
         ]);
 
-        \ = Enrollment::with(['child', 'section', 'package', 'schedule'])
-            ->where('child_id', \['child_id'])
-            ->where('section_id', \['section_id'])
+        $enrollment = Enrollment::with(['child', 'section', 'package', 'schedule'])
+            ->where('child_id', $data['child_id'])
+            ->where('section_id', $data['section_id'])
             ->latest('started_at')
             ->first();
 
-        if (! \) {
-            return back()->with('error', '�?��' ����'��?�?�?�?�? ���?���?����>��?��? �� �?�'�?�� �?���Ő��.');
+        if (!$enrollment) {
+            return back()->with('error', 'Прикрепление ребёнка к секции не найдено.');
         }
 
-        if (\->expires_at && now()->gt(\->expires_at)) {
-            return back()->with('error', '���?�?�� �?����?�'�?��? �������'�� ��?�'�'��.');
+        if ($enrollment->expires_at && now()->gt($enrollment->expires_at)) {
+            return back()->with('error', 'Срок действия прикрепления истёк.');
         }
 
-        if (! is_null(\->visits_left) && \->visits_left < 1) {
-            return back()->with('error', '�"�?�?�'�?���?�<�� ���?�?��%��?��? ������?�?�ؐ�>��?�?.');
+        if (!is_null($enrollment->visits_left) && $enrollment->visits_left < 1) {
+            return back()->with('error', 'У ребёнка закончились посещения по абонементу.');
         }
 
-        \ = \->price ?? (\->package?->price ?? 0);
-        if (\ > 0 && \->total_paid < \) {
-            return back()->with('error', '�?��>�?���? �?�'�?��'��'�? ���?�?��%��?��� �+��� �?���>���'�< �������'��.');
+        $requiredAmount = $enrollment->price ?? ($enrollment->package?->price ?? 0);
+        if ($requiredAmount > 0 && $enrollment->total_paid < $requiredAmount) {
+            return back()->with('error', 'Сначала примите оплату за прикрепление ребёнка к секции.');
         }
 
-        \ = \->schedule;
-        if (! \) {
-            return back()->with('error', '�"�>�? �?�'�?�?�? ���?���?����>��?��? �?�� �����?���? �?�?��?��?�?�?�� ��?�'��?�?���>.');
+        $schedule = $enrollment->schedule;
+        if (!$schedule) {
+            return back()->with('error', 'У прикрепления ребёнка к секции не выбрано расписание.');
         }
 
-        \ = now();
-        \ = (int) \->weekday === \->isoWeekday();
-        \ = \->starts_at->copy()->setDate(\->year, \->month, \->day);
-        \ = \->ends_at->copy()->setDate(\->year, \->month, \->day);
-        \ = \ && \->between(\, \);
+        $now = now();
+        $isToday = (int) $schedule->weekday === $now->isoWeekday();
+        $slotStart = $schedule->starts_at->copy()->setDate($now->year, $now->month, $now->day);
+        $slotEnd = $schedule->ends_at->copy()->setDate($now->year, $now->month, $now->day);
+        $slotActive = $isToday && $now->between($slotStart, $slotEnd);
 
-        if (! \) {
-            return back()->with('error', '�?�'�?��'�?�'�� �?��+�'�?��� �?�? �?�?��?�? �����?�?�'��?.');
+        if (!$slotActive) {
+            return back()->with('error', 'Посещение можно отметить только во время занятия.');
         }
 
-        \ = \->toDateString();
-        \ = \->section;
-        \ = \->child;
+        $attendedOn = $now->toDateString();
+        $section = $enrollment->section;
+        $child = $enrollment->child;
 
-        \ = Attendance::where('child_id', \['child_id'])
-            ->where('section_id', \['section_id'])
-            ->where('attended_on', \)
+        $existingAttendance = Attendance::where('child_id', $data['child_id'])
+            ->where('section_id', $data['section_id'])
+            ->where('attended_on', $attendedOn)
             ->first();
 
-        if (\ && \->status === 'attended') {
-            return back()->with('info', '����+�'�?�?�� �?�\u0014�� �?�'�?��ؐ�? �?��?�?�?�?�?.');
+        if ($existingAttendance && $existingAttendance->status === 'attended') {
+            return back()->with('info', 'Ребёнок уже отмечен как посетивший занятие сегодня.');
         }
 
-        \ = \->status;
-        \ = null;
+        $statusBefore = $existingAttendance?->status;
+        $attendance = null;
 
-        DB::transaction(function () use (\, \, \, \, \, \, &\, &\) {
-            \ = Attendance::where('child_id', \['child_id'])
-                ->where('section_id', \['section_id'])
-                ->where('attended_on', \)
+        DB::transaction(function () use ($data, $enrollment, $attendedOn, $section, $child, $existingAttendance, $statusBefore, &$attendance) {
+            $attendance = Attendance::where('child_id', $data['child_id'])
+                ->where('section_id', $data['section_id'])
+                ->where('attended_on', $attendedOn)
                 ->lockForUpdate()
                 ->first();
 
-            if (\) {
-                \ = \->status;
-                \->fill([
-                    'enrollment_id' => \->id,
-                    'room_id' => \->room_id,
+            if ($attendance) {
+                $statusBefore = $attendance->status;
+                $attendance->fill([
+                    'enrollment_id' => $enrollment->id,
+                    'room_id' => $section->room_id,
                     'attended_at' => now(),
                     'status' => 'attended',
                     'source' => 'manual',
-                    'marked_by' => \->user()->id,
+                    'marked_by' => auth()->user()->id,
                     'restored_at' => null,
                     'restored_by' => null,
                     'restored_reason' => null,
                 ]);
-                \->save();
+                $attendance->save();
 
-                if (\ === 'restored' && ! is_null(\->visits_left)) {
-                    \->decrement('visits_left');
+                if ($statusBefore === 'restored' && !is_null($enrollment->visits_left)) {
+                    $enrollment->decrement('visits_left');
                 }
 
-                \ = \;
+                $attendance = $attendance;
             } else {
-                \ = Attendance::create([
-                    'child_id' => \['child_id'],
-                    'section_id' => \['section_id'],
-                    'enrollment_id' => \->id,
-                    'room_id' => \->room_id,
-                    'attended_on' => \,
+                $attendance = Attendance::create([
+                    'child_id' => $data['child_id'],
+                    'section_id' => $data['section_id'],
+                    'enrollment_id' => $enrollment->id,
+                    'room_id' => $section->room_id,
+                    'attended_on' => $attendedOn,
                     'attended_at' => now(),
                     'status' => 'attended',
                     'source' => 'manual',
-                    'marked_by' => \->user()->id,
+                    'marked_by' => auth()->user()->id,
                 ]);
 
-                if (! is_null(\->visits_left)) {
-                    \->decrement('visits_left');
+                if (!is_null($enrollment->visits_left)) {
+                    $enrollment->decrement('visits_left');
                 }
             }
 
-            \->refresh();
+            $enrollment->refresh();
 
-            ActivityLogger::log(\->user(), 'child.attendance_marked', \, [
-                'section_id' => \->section_id,
-                'section_name' => \->name,
-                'schedule_id' => \->section_schedule_id,
-                'attendance_id' => \->id,
-                'attended_on' => \,
-                'status_before' => \,
+            ActivityLogger::log(auth()->user(), 'child.attendance_marked', $child, [
+                'section_id' => $section->id,
+                'section_name' => $section->name,
+                'schedule_id' => $enrollment->section_schedule_id,
+                'attendance_id' => $attendance->id,
+                'attended_on' => $attendedOn,
+                'status_before' => $statusBefore,
             ]);
         });
 
-        return back()->with('success', '�?�?�?��%��?��� �?�'�?��ؐ�?�?. �?�?��?�'�?�?�?�? �����?�?�'��?!');
-    }\n}
+        return back()->with('success', 'Посещение отмечено. Ребёнок успешно посетил занятие!');
+    }
 
+    public function renew(Request $request)
+    {
+        $data = $request->validate([
+            'child_id' => ['required', 'exists:children,id'],
+            'section_id' => ['required', 'exists:sections,id'],
+        ]);
 
+        $enrollment = Enrollment::with(['child', 'section', 'package'])
+            ->where('child_id', $data['child_id'])
+            ->where('section_id', $data['section_id'])
+            ->latest('started_at')
+            ->first();
+
+        if (!$enrollment) {
+            return back()->with('error', 'Прикрепление ребёнка к секции не найдено.');
+        }
+
+        if ($enrollment->expires_at && now()->gt($enrollment->expires_at)) {
+            return back()->with('error', 'Срок действия прикрепления истёк.');
+        }
+
+        $requiredAmount = $enrollment->price ?? ($enrollment->package?->price ?? 0);
+        if ($requiredAmount > 0 && $enrollment->total_paid < $requiredAmount) {
+            return back()->with('error', 'Сначала примите оплату за прикрепление ребёнка к секции.');
+        }
+
+        $package = $enrollment->package;
+        if (!$package) {
+            return back()->with('error', 'У прикрепления не выбран пакет.');
+        }
+
+        $now = now();
+        $newExpiresAt = null;
+
+        if ($package->billing_type === 'period' && $package->days) {
+            $newExpiresAt = $now->copy()->addDays($package->days);
+        } elseif ($package->billing_type === 'visits' && $package->visits_count) {
+            $enrollment->visits_left = $package->visits_count;
+        }
+
+        $enrollment->update([
+            'started_at' => $now,
+            'expires_at' => $newExpiresAt,
+            'status' => 'paid',
+        ]);
+
+        ActivityLogger::log(auth()->user(), 'child.enrollment_renewed', $enrollment->child, [
+            'section_id' => $enrollment->section_id,
+            'section_name' => $enrollment->section->name,
+            'package_id' => $package->id,
+            'package_name' => $package->name,
+            'new_expires_at' => $newExpiresAt?->toDateString(),
+            'visits_left' => $enrollment->visits_left,
+        ]);
+
+        return back()->with('success', 'Прикрепление продлено. Ребёнок может посещать занятия!');
+    }
+
+    public function markTrial(Request $request)
+    {
+        $data = $request->validate([
+            'child_id' => ['required', 'exists:children,id'],
+            'section_id' => ['required', 'exists:sections,id'],
+            'payment_amount' => ['nullable', 'numeric', 'min:0'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
+            'payment_comment' => ['nullable', 'string'],
+        ]);
+
+        $child = \App\Models\Child::findOrFail($data['child_id']);
+        $section = Section::findOrFail($data['section_id']);
+
+        // Проверяем, есть ли пробные занятия в секции
+        if (!$section->has_trial) {
+            return back()->with('error', 'В данной секции нет пробных занятий.');
+        }
+
+        // Проверяем, не было ли уже пробного занятия у этого ребенка в этой секции
+        if ($section->hasChildTrialAttendance($child)) {
+            return back()->with('error', 'У этого ребенка уже было пробное занятие в данной секции.');
+        }
+
+        $now = now();
+        $trialAttendance = null;
+
+        DB::transaction(function () use ($request, $data, $child, $section, $now, &$trialAttendance) {
+            $trialAttendance = TrialAttendance::create([
+                'child_id' => $child->id,
+                'section_id' => $section->id,
+                'attended_on' => $now->toDateString(),
+                'attended_at' => $now,
+                'is_free' => $section->trial_is_free,
+                'price' => $section->trial_price,
+                'paid_amount' => $data['payment_amount'] ?? 0,
+                'payment_method' => $data['payment_method'] ?? null,
+                'payment_comment' => $data['payment_comment'] ?? null,
+                'marked_by' => $request->user()->id,
+            ]);
+
+            ActivityLogger::log($request->user(), 'child.trial_attendance_marked', $child, [
+                'section_id' => $section->id,
+                'section_name' => $section->name,
+                'trial_attendance_id' => $trialAttendance->id,
+                'is_free' => $trialAttendance->is_free,
+                'price' => $trialAttendance->price,
+                'paid_amount' => $trialAttendance->paid_amount,
+                'attended_on' => $trialAttendance->attended_on->toDateString(),
+            ]);
+        });
+
+        $message = $trialAttendance->is_free 
+            ? 'Пробное занятие отмечено как бесплатное.'
+            : 'Пробное занятие отмечено. Сумма: ' . number_format($trialAttendance->price, 2, ',', ' ') . ' ₸';
+
+        return back()->with('success', $message);
+    }
+}

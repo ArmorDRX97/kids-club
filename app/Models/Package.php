@@ -19,6 +19,7 @@ class Package extends Model {
 
     protected $casts = [
         'is_active' => 'boolean',
+        'price' => 'decimal:2',
     ];
 
     public function section(){ return $this->belongsTo(Section::class); }

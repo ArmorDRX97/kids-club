@@ -129,6 +129,7 @@
                                         <th>Пакет</th>
                                         <th>Время</th>
                                         <th>Оплата</th>
+                                        <th>Пробное</th>
                                         <th class="text-end">Действия</th>
                                     </tr>
                                     </thead>
@@ -169,6 +170,26 @@
                                                     <div class="text-secondary small">{{ $row['payment_helper'] }}</div>
                                                 @endif
                                             </td>
+                                            <td>
+                                                @if($section->has_trial)
+                                                    @if($row['already_trial_attended'])
+                                                        <span class="badge bg-success-subtle text-success-emphasis">Пробное пройдено</span>
+                                                    @else
+                                                        <div class="d-flex flex-column gap-1">
+                                                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#trial-modal-{{ $enrollment->id }}" {{ $row['mark_disabled'] ? 'disabled' : '' }}>
+                                                                Пробное занятие
+                                                            </button>
+                                                            @if($section->trial_is_free)
+                                                                <small class="text-success">Бесплатно</small>
+                                                            @else
+                                                                <small class="text-primary">{{ number_format($section->trial_price, 2, ',', ' ') }} ₸</small>
+                                                            @endif
+                                                        </div>
+                                                    @endif
+                                                @else
+                                                    <span class="text-secondary small">Нет пробных</span>
+                                                @endif
+                                            </td>
                                             <td class="text-end">
                                                 <div class="d-flex flex-column flex-sm-row gap-2 justify-content-end">
                                                     <form method="POST" action="{{ route('reception.mark') }}" data-attendance-form>
@@ -186,7 +207,7 @@
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="5" class="text-center text-secondary py-3">Активных записей нет.</td>
+                                            <td colspan="6" class="text-center text-secondary py-3">Активных записей нет.</td>
                                         </tr>
                                     @endforelse
                                     </tbody>
@@ -205,7 +226,84 @@
 @foreach($directionGroups as $cards)
     @foreach($cards as $card)
         @foreach($card['enrollments'] as $row)
-            @php $enrollment = $row['enrollment']; @endphp
+            @php 
+                $enrollment = $row['enrollment'];
+                $section = $card['section'];
+            @endphp
+            <!-- Модальное окно для пробного занятия -->
+            @if($section->has_trial && !$row['already_trial_attended'])
+                <div class="modal fade" id="trial-modal-{{ $enrollment->id }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Пробное занятие</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                            </div>
+                            <form method="POST" action="{{ route('reception.mark-trial') }}">
+                                @csrf
+                                <input type="hidden" name="child_id" value="{{ $row['child']->id }}">
+                                <input type="hidden" name="section_id" value="{{ $section->id }}">
+                                <div class="modal-body">
+                                    <dl class="row mb-3">
+                                        <dt class="col-sm-4">Ребёнок</dt>
+                                        <dd class="col-sm-8">{{ $row['child']->full_name }}</dd>
+                                        <dt class="col-sm-4">Секция</dt>
+                                        <dd class="col-sm-8">{{ $section->name }}</dd>
+                                        <dt class="col-sm-4">Тип пробного</dt>
+                                        <dd class="col-sm-8">
+                                            @if($section->trial_is_free)
+                                                <span class="badge bg-success-subtle text-success-emphasis">Бесплатное</span>
+                                            @else
+                                                <span class="badge bg-primary-subtle text-primary-emphasis">Платное - {{ number_format($section->trial_price, 2, ',', ' ') }} ₸</span>
+                                            @endif
+                                        </dd>
+                                    </dl>
+                                    
+                                    @if(!$section->trial_is_free)
+                                        <div class="mb-3">
+                                            <label class="form-label" for="trial-payment-amount-{{ $enrollment->id }}">Сумма оплаты, ₸</label>
+                                            <input type="number" step="0.01" min="0" max="{{ $section->trial_price }}" class="form-control" 
+                                                   id="trial-payment-amount-{{ $enrollment->id }}" 
+                                                   name="payment_amount" 
+                                                   value="{{ $section->trial_price }}" 
+                                                   required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label" for="trial-payment-method-{{ $enrollment->id }}">Способ оплаты</label>
+                                            <input type="text" class="form-control" 
+                                                   id="trial-payment-method-{{ $enrollment->id }}" 
+                                                   name="payment_method" 
+                                                   maxlength="50" 
+                                                   placeholder="Например, Kaspi">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label" for="trial-payment-comment-{{ $enrollment->id }}">Комментарий к оплате</label>
+                                            <textarea class="form-control" 
+                                                      id="trial-payment-comment-{{ $enrollment->id }}" 
+                                                      name="payment_comment" 
+                                                      rows="2" 
+                                                      placeholder="Дополнительная информация об оплате"></textarea>
+                                        </div>
+                                    @else
+                                        <input type="hidden" name="payment_amount" value="0">
+                                    @endif
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                                    <button type="submit" class="btn btn-info">
+                                        @if($section->trial_is_free)
+                                            Отметить пробное занятие
+                                        @else
+                                            Отметить и принять оплату
+                                        @endif
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <div class="modal fade" id="payment-modal-{{ $enrollment->id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content">

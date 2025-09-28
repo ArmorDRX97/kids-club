@@ -14,10 +14,16 @@ class Section extends Model
         'direction_id',
         'room_id',
         'is_active',
+        'has_trial',
+        'trial_is_free',
+        'trial_price',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'has_trial' => 'boolean',
+        'trial_is_free' => 'boolean',
+        'trial_price' => 'decimal:2',
     ];
 
     public function direction()
@@ -53,5 +59,15 @@ class Section extends Model
     public function activeSchedulesForWeekday(int $weekday)
     {
         return $this->schedules()->where('weekday', $weekday)->orderBy('starts_at');
+    }
+
+    public function trialAttendances()
+    {
+        return $this->hasMany(TrialAttendance::class);
+    }
+
+    public function hasChildTrialAttendance(Child $child): bool
+    {
+        return $this->trialAttendances()->where('child_id', $child->id)->exists();
     }
 }

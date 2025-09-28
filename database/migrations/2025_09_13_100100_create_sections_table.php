@@ -13,6 +13,9 @@ return new class extends Migration {
             $table->foreignId('room_id')->nullable()->constrained('rooms')->nullOnDelete();
             $table->string('name');
             $table->boolean('is_active')->default(true);
+            $table->boolean('has_trial')->default(false);
+            $table->boolean('trial_is_free')->default(true);
+            $table->decimal('trial_price', 10, 2)->nullable();
             $table->timestamps();
         });
     }

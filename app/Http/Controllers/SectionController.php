@@ -133,9 +133,30 @@ class SectionController extends Controller
             'direction_id' => ['nullable', 'exists:directions,id'],
             'room_id' => ['nullable', 'exists:rooms,id'],
             'is_active' => ['nullable', 'boolean'],
+            'has_trial' => ['nullable', 'boolean'],
+            'trial_is_free' => ['nullable', 'boolean'],
+            'trial_price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $data['is_active'] = (bool) ($data['is_active'] ?? true);
+        $data['has_trial'] = (bool) ($data['has_trial'] ?? false);
+        $data['trial_is_free'] = (bool) ($data['trial_is_free'] ?? true);
+        
+        // Если пробное занятие отключено, сбрасываем все связанные поля
+        if (!$data['has_trial']) {
+            $data['trial_is_free'] = true;
+            $data['trial_price'] = null;
+        }
+        
+        // Если пробное занятие платное, но цена не указана - ошибка
+        if ($data['has_trial'] && !$data['trial_is_free'] && (!$data['trial_price'] || $data['trial_price'] <= 0)) {
+            throw ValidationException::withMessages(['trial_price' => 'Укажите цену для платного пробного занятия.']);
+        }
+        
+        // Если пробное занятие бесплатное, обнуляем цену
+        if ($data['has_trial'] && $data['trial_is_free']) {
+            $data['trial_price'] = null;
+        }
 
         $scheduleInput = $request->input('schedule', []);
         if (! is_array($scheduleInput) || empty($scheduleInput)) {

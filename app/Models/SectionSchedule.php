@@ -18,8 +18,8 @@ class SectionSchedule extends Model
 
     protected $casts = [
         'weekday' => 'integer',
-        'starts_at' => 'datetime:H:i',
-        'ends_at' => 'datetime:H:i',
+        'starts_at' => 'datetime',
+        'ends_at' => 'datetime',
     ];
 
     public function section()
